@@ -122,7 +122,7 @@ Object.entries(holeCoords).forEach(([num, {x, y}]) => {
     numText.setAttribute('x', x);
     numText.setAttribute('y', y+5);
     numText.setAttribute('text-anchor', 'middle');
-    numText.setAttribute('font-size', '12');
+    numText.setAttribute('font-size', '9.6');
     numText.setAttribute('fill', '#bbb');
     numText.setAttribute('font-weight', 'bold');
     numText.textContent = num;
@@ -277,6 +277,71 @@ let draggedStoneId = null;
 let dragOffset = {x:0, y:0};
 let isDragging = false;
 let dragCurrentPos = {x:0, y:0};
+
+// ექვსი მიმართულების ვექტორები (rowIdx, colIdx)
+const MOVE_DIRECTIONS = [
+    {dr: -1, dc: 0},  // ზემოთ
+    {dr: -1, dc: 1},  // მარჯვნივ ზემოთ
+    {dr: 0, dc: 1},   // მარჯვნივ
+    {dr: 1, dc: 0},   // ქვემოთ
+    {dr: 1, dc: -1},  // მარცხნივ ქვემოთ
+    {dr: 0, dc: -1},  // მარცხნივ
+];
+
+// ყველა შესაძლო სწრაფი სვლა (მეზობელ თავისუფალ ბუდეში)
+function getSingleStepTargets(stone) {
+    const {rowIdx, colIdx} = holeIndexMap[stone.pos];
+    const targets = [];
+    for (const {dr, dc} of MOVE_DIRECTIONS) {
+        const r = rowIdx + dr;
+        const c = colIdx + dc;
+        if (r >= 0 && r < ROWS.length && c >= 0 && c < ROWS[r]) {
+            const n = indexToNum[`${r},${c}`];
+            if (n && !holeState[n]) targets.push(n);
+        }
+    }
+    return targets;
+}
+
+// ყველა შესაძლო გადახტომის ბილიკი (ერთზე მეტი გადახტომის ჩათვლით)
+function getAllJumpTargets(stone) {
+    const visited = new Set();
+    const results = new Set();
+    const startNum = stone.pos;
+    function dfs(currentNum) {
+        const {rowIdx, colIdx} = holeIndexMap[currentNum];
+        for (const {dr, dc} of MOVE_DIRECTIONS) {
+            let r = rowIdx + dr;
+            let c = colIdx + dc;
+            let overNum = indexToNum[`${r},${c}`];
+            if (!overNum || !holeState[overNum]) continue; // უნდა იყოს ქვა გადასახტომად
+            // მოძებნე თავისუფალი ბუდე გადასახტომი ქვიდან იმავე მიმართულებით
+            let jumpR = r + dr;
+            let jumpC = c + dc;
+            let jumpNum = indexToNum[`${jumpR},${jumpC}`];
+            while (jumpNum && !holeState[jumpNum]) {
+                // არ აქვს მნიშვნელობა რამდენი უჯრაა დაშორებით, მთავარია შუაში ქვა დგას
+                if (jumpNum !== startNum) results.add(jumpNum); // არ დავამატოთ საწყისი პოზიცია
+                // DFS გაგრძელება: ამ ბუდიდანაც შეიძლება გადახტომა
+                const key = `${jumpNum}-${dr},${dc}`;
+                if (!visited.has(key)) {
+                    visited.add(key);
+                    // დროებით გადავაადგილოთ ქვა, რომ ციკლი სწორად იმუშაოს
+                    const prev = holeState[jumpNum];
+                    holeState[jumpNum] = stone.id;
+                    dfs(jumpNum);
+                    holeState[jumpNum] = prev;
+                }
+                // თუ კიდევ უფრო შორსაა თავისუფალი ბუდე იმავე ხაზზე, გავაგრძელოთ
+                jumpR += dr;
+                jumpC += dc;
+                jumpNum = indexToNum[`${jumpR},${jumpC}`];
+            }
+        }
+    }
+    dfs(startNum);
+    return Array.from(results);
+}
 
 function getAllowedTargets(stone) {
     const {rowIdx, colIdx} = holeIndexMap[stone.pos];
@@ -540,48 +605,127 @@ function getNearestHole(x, y) {
     return {num: minNum, dist: minDist};
 }
 
+// რგოლების ბუდეების ნომრები (ზედა, მარჯვენა ზედა, მარჯვენა ქვედა, ქვედა, მარცხენა ქვედა, მარცხენა ზედა)
+const RING_GROUPS = [
+    [1,2,3,4,5,7,8],           // ზედა (მწვანე)
+    [19,20,30,31,32,42,43],   // მარჯვენა ზედა (ბადრიჯნისფერი)
+    [82,83,93,94,95,105,106], // მარჯვენა ქვედა (ყვითელი)
+    [108,109,111,112,113,114,115], // ქვედა (წითელი)
+    [73,74,84,85,86,96,97],   // მარცხენა ქვედა (ცისფერი)
+    [10,11,21,22,23,33,34],   // მარცხენა ზედა (ნარინჯისფერი)
+];
+
+function getAllowedTargetsFromDiagonals(stone) {
+    if (!window.DIAGONALS) return [];
+    const entry = window.DIAGONALS[String(stone.pos)];
+    if (!entry) return [];
+    // Collect all destinations from all directions
+    let allTargets = [];
+    for (const dir of ["↖","↗","↙","↘"]) {
+        if (Array.isArray(entry[dir])) {
+            allTargets = allTargets.concat(entry[dir]);
+        }
+    }
+    // Only allow empty holes
+    return allTargets.filter(num => !holeState[num]);
+}
+
+function getImmediateTargetsFromDiagonals(stone) {
+    if (!window.DIAGONALS) return [];
+    const entry = window.DIAGONALS[String(stone.pos)];
+    if (!entry) return [];
+    let immediateTargets = [];
+    for (const dir of ["↖","↗","↙","↘"]) {
+        if (Array.isArray(entry[dir]) && entry[dir].length > 0) {
+            const first = entry[dir][0];
+            if (!holeState[first]) immediateTargets.push(first);
+        }
+    }
+    return immediateTargets;
+}
+
+function getJumpTargetsFromDiagonals(stone) {
+    if (!window.DIAGONALS) return [];
+    const entry = window.DIAGONALS[String(stone.pos)];
+    if (!entry) return [];
+    let jumpTargets = [];
+    for (const dir of ["↖","↗","↙","↘"]) {
+        const path = entry[dir];
+        if (!Array.isArray(path) || path.length === 0) continue;
+        for (let i = 0; i < path.length; ++i) {
+            if (!holeState[path[i]]) continue; // skip if not occupied
+            const N = i;
+            if (N === 0) continue; // must be at least one empty before
+            // Check all holes before i are empty
+            let allBeforeEmpty = true;
+            for (let j = 0; j < N; ++j) {
+                if (holeState[path[j]]) {
+                    allBeforeEmpty = false;
+                    break;
+                }
+            }
+            if (!allBeforeEmpty) continue;
+            // Jump to the (i+N+1)-th hole (N holes after occupied, so N+1 after occupied)
+            let jumpIdx = i + N + 1;
+            if (jumpIdx >= path.length) continue;
+            // All holes between occupied and jumpIdx must be empty
+            let allAfterEmpty = true;
+            for (let j = i + 1; j < jumpIdx; ++j) {
+                if (holeState[path[j]]) {
+                    allAfterEmpty = false;
+                    break;
+                }
+            }
+            if (allAfterEmpty && !holeState[path[jumpIdx]]) {
+                jumpTargets.push(path[jumpIdx]);
+            }
+        }
+    }
+    // Only unique targets
+    return Array.from(new Set(jumpTargets));
+}
+
 function renderBoard() {
     // წაშალე ძველი ქვები და ბუდეების ჰაილაითი
-    Array.from(svg.querySelectorAll('[data-stone-id], .stone-highlight, .hole-allowed, .hole-diagonal')).forEach(e => e.remove());
+    Array.from(svg.querySelectorAll('[data-stone-id], .stone-highlight, .hole-allowed, .hole-diagonal, .hole-jump')).forEach(e => e.remove());
     // ბუდეების ვიზუალური გამოყოფა (თუ არჩეული ქვაა)
+    let jumpTargets = [];
     if (selectedStoneId) {
         const selectedStone = stonesState.find(s=>s.id===selectedStoneId);
-        allowedTargets = [];
-        let diagonalHoles = window.DIAGONALS && window.DIAGONALS[selectedStone.pos]
-            ? Object.values(window.DIAGONALS[selectedStone.pos]).flat()
-            : [];
-        diagonalHoles.forEach(num => {
+        // highlighting: ყველა შესაძლო ბუდე (როგორც ადრე)
+        allowedTargets = getAllowedTargetsFromDiagonals(selectedStone);
+        jumpTargets = getJumpTargetsFromDiagonals(selectedStone);
+        // ჩვეულებრივი სვლების ჰაილაითი (ყვითელი)
+        allowedTargets.forEach(num => {
             if (!holeCoords[num]) return;
             const {x, y} = holeCoords[num];
-            const diag = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            diag.setAttribute('cx', x);
-            diag.setAttribute('cy', y);
-            diag.setAttribute('r', HOLE_RADIUS*1.18);
-            diag.setAttribute('fill', '#00bfff');
-            diag.setAttribute('fill-opacity', '0.23');
-            diag.setAttribute('stroke', '#00bfff');
-            diag.setAttribute('stroke-width', '1.2');
-            diag.setAttribute('class', 'hole-diagonal');
-            diag.setAttribute('pointer-events', 'none');
-            svg.appendChild(diag);
+            const highlight = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            highlight.setAttribute('cx', x);
+            highlight.setAttribute('cy', y);
+            highlight.setAttribute('r', HOLE_RADIUS*1.08);
+            highlight.setAttribute('fill', '#ff0');
+            highlight.setAttribute('fill-opacity', '0.22');
+            highlight.setAttribute('stroke', '#ff0');
+            highlight.setAttribute('stroke-width', '2');
+            highlight.setAttribute('class', 'hole-allowed');
+            highlight.setAttribute('pointer-events', 'none');
+            svg.appendChild(highlight);
         });
-        diagonalHoles.forEach(num => {
+        // გადახტომის ბუდეების ჰაილაითი (ლურჯი)
+        jumpTargets.forEach(num => {
             if (!holeCoords[num]) return;
-            if (!holeState[num]) {
-                allowedTargets.push(num);
-                const {x, y} = holeCoords[num];
-                const highlight = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                highlight.setAttribute('cx', x);
-                highlight.setAttribute('cy', y);
-                highlight.setAttribute('r', HOLE_RADIUS*1.08);
-                highlight.setAttribute('fill', '#ff0');
-                highlight.setAttribute('fill-opacity', '0.22');
-                highlight.setAttribute('stroke', '#ff0');
-                highlight.setAttribute('stroke-width', '2');
-                highlight.setAttribute('class', 'hole-allowed');
-                highlight.setAttribute('pointer-events', 'none');
-                svg.appendChild(highlight);
-            }
+            const {x, y} = holeCoords[num];
+            const highlight = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            highlight.setAttribute('cx', x);
+            highlight.setAttribute('cy', y);
+            highlight.setAttribute('r', HOLE_RADIUS*1.18);
+            highlight.setAttribute('fill', '#00e0ff');
+            highlight.setAttribute('fill-opacity', '0.22');
+            highlight.setAttribute('stroke', '#00e0ff');
+            highlight.setAttribute('stroke-width', '2.5');
+            highlight.setAttribute('class', 'hole-jump');
+            highlight.setAttribute('pointer-events', 'none');
+            svg.appendChild(highlight);
         });
     } else {
         allowedTargets = [];
@@ -695,12 +839,25 @@ function renderBoard() {
             if(i === 1 || i === 2) cx -= 2; // ორივე მარჯვენა წრე გაწიე მარცხნივ 2 პიქსელით
             if(i === 1) cy += 5; // მარჯვენა ზედა წრე დაწიე ქვემოთ 5 პიქსელით
             if(i === 2) cy -= 5; // მარჯვენა ქვედა წრე აწიე მაღლა 5 პიქსელით
+            // ფერები: 0=მწვანე, 1=ბადრიჯნისფერი, 2=ყვითელი, 3=წითელი, 4=ცისფერი, 5=ნარინჯისფერი
+            const circleColors = [STONE_COLORS.green, STONE_COLORS.navy, STONE_COLORS.yellow, STONE_COLORS.red, STONE_COLORS.blue, STONE_COLORS.orange];
+            // --- ახალი ლოგიკა: თუ ყველა ბუდე შევსებულია ერთ ფერად ქვაზე, წრის ფერი იცვლება ---
+            const groupHoles = RING_GROUPS[i];
+            const groupStones = groupHoles.map(num => holeState[String(num)] && stonesState.find(s=>s.id===holeState[String(num)]));
+            const allFilled = groupStones.every(s => s);
+            let overrideColor = null;
+            if (allFilled) {
+                const firstColor = groupStones[0].color;
+                if (groupStones.every(s => s.color === firstColor)) {
+                    overrideColor = firstColor;
+                }
+            }
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', cx);
             circle.setAttribute('cy', cy);
             circle.setAttribute('r', redRadius - 50 + 20 + 5 + 3 + 2);
-            circle.setAttribute('stroke', 'red');
-            circle.setAttribute('stroke-width', '1');
+            circle.setAttribute('stroke', overrideColor || circleColors[i]);
+            circle.setAttribute('stroke-width', '3');
             circle.setAttribute('fill', 'none');
             circle.setAttribute('pointer-events', 'none');
             svg.appendChild(circle);
@@ -723,9 +880,11 @@ svg.addEventListener('mouseup', e => {
     const {num, dist} = getNearestHole(mouse.x, mouse.y);
     const stone = stonesState.find(s => s.id === draggedStoneId);
     let canDrop = false;
-    if (stone && window.DIAGONALS && window.DIAGONALS[stone.pos]) {
-        const allowed = Object.values(window.DIAGONALS[stone.pos]).flat();
-        canDrop = allowed.includes(num) && !holeState[num] && dist < HOLE_RADIUS*1.8;
+    if (stone) {
+        // მხოლოდ ერთი ბუდით გადაადგილება (მომდევნო ბუდე) ან გადახტომა
+        const allowed = getImmediateTargetsFromDiagonals(stone);
+        const jumpAllowed = getJumpTargetsFromDiagonals(stone);
+        canDrop = (allowed.includes(num) || jumpAllowed.includes(num)) && !holeState[num] && dist < HOLE_RADIUS*1.8;
     }
     if (canDrop) {
         holeState[stone.pos] = null;
