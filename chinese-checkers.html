@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chinese Checkers - 115 ბუდე</title>
+    <style>
+        body { background: #222; color: #fff; font-family: sans-serif; }
+        .container { max-width: 900px; margin: 40px auto; background: #333; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px #0008; }
+        h2 { text-align: center; }
+        .board-wrap { display: flex; justify-content: center; }
+        .legend { text-align: center; margin-top: 12px; color: #bbb; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Chinese Checkers - 115 ბუდე</h2>
+    <div class="board-wrap">
+        <svg id="board" width="700" height="700" viewBox="0 0 700 700"></svg>
+    </div>
+    <div class="legend">ბუდეები ჩაღრმავებული, ქვები ნარდის სტილში</div>
+</div>
+<script>
+// პარამეტრები
+const ROWS = [2,3,4,11,12,11,10,9,10,11,12,11,4,3,2];
+const BOARD_CENTER = {x: 350, y: 350};
+const HOLE_RADIUS = 11; // ბუდეების და ქვების რადიუსი გავზარდე 3 პიქსელით
+const HOLE_DIST = 13 * 2.7 - 1; // ბუდეებს შორის მანძილი დავაბრუნე როგორც იყო (HOLE_RADIUS-ის შემცირება არ იმოქმედებს დაშორებაზე)
+const ROW_HEIGHT = HOLE_DIST * 0.92; // ვერტიკალური დაშორება
+
+// ბუდეების კოორდინატების გენერაცია (ვარსკვლავის ფორმა, თანაბარი დაშორება)
+const holeCoords = {};
+const holeIndexMap = {}; // num -> {rowIdx, colIdx}
+const indexToNum = {};   // rowIdx,colIdx -> num
+let holeNum = 1;
+const startY = BOARD_CENTER.y - (ROWS.length-1)/2 * ROW_HEIGHT;
+ROWS.forEach((count, rowIdx) => {
+    const rowY = startY + rowIdx * ROW_HEIGHT;
+    const rowWidth = (count-1) * HOLE_DIST;
+    const startX = BOARD_CENTER.x - rowWidth/2;
+    for(let colIdx=0; colIdx<count; colIdx++) {
+        const x = startX + colIdx * HOLE_DIST;
+        const y = rowY;
+        holeCoords[holeNum] = {x, y};
+        holeIndexMap[holeNum] = {rowIdx, colIdx};
+        indexToNum[`${rowIdx},${colIdx}`] = holeNum;
+        holeNum++;
+    }
+});
+
+// ქვების ობიექტური აღწერა
+const STONE_COLORS = {
+    green:   '#2ecc40',
+    orange:  '#ff9800',
+    navy:    '#3a3a7a',
+    blue:    '#3498db',
+    yellow:  '#f1c40f',
+    red:     '#e74c3c',
+};
+const stones = [
+    ...[3,5,6,9,14,15,16].map((pos,i)=>({id:`g${i+1}`, color:STONE_COLORS.green, pos})),
+    ...[11,12,24,35,45,33,44].map((pos,i)=>({id:`o${i+1}`, color:STONE_COLORS.orange, pos})),
+    ...[18,19,29,41,52,43,53].map((pos,i)=>({id:`n${i+1}`, color:STONE_COLORS.navy, pos})),
+    ...[63,64,73,75,87,97,98].map((pos,i)=>({id:`b${i+1}`, color:STONE_COLORS.blue, pos})),
+    ...[71,72,81,83,92,104,105].map((pos,i)=>({id:`y${i+1}`, color:STONE_COLORS.yellow, pos})),
+    ...[100,101,102,107,110,111,113].map((pos,i)=>({id:`r${i+1}`, color:STONE_COLORS.red, pos})),
+];
+
+const svg = document.getElementById('board');
+
+// დაფის გარე წრე
+const outer = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+outer.setAttribute('cx', BOARD_CENTER.x);
+outer.setAttribute('cy', BOARD_CENTER.y);
+outer.setAttribute('r', HOLE_RADIUS * 320);
+outer.setAttribute('fill', '#888');
+outer.setAttribute('stroke', '#222');
+outer.setAttribute('stroke-width', '10');
+svg.appendChild(outer);
+
+// SVG defs: gradients for holes and stones
+const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+svg.appendChild(defs);
+
+// დახატე ბუდეები (ჩაღრმავებული ეფექტით, რიცხვით)
+Object.entries(holeCoords).forEach(([num, {x, y}]) => {
+    // ჩაღრმავებული გრადიენტი (ზემოდან ჩრდილი, ქვემოდან განათება)
+    const gradId = `holegrad${num}`;
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+    grad.setAttribute('id', gradId);
+    grad.setAttribute('cx', '50%');
+    grad.setAttribute('cy', '55%');
+    grad.setAttribute('r', '60%');
+    grad.innerHTML = `
+        <stop offset="0%" stop-color="#888" stop-opacity="1"/>
+        <stop offset="55%" stop-color="#888" stop-opacity="1"/>
+        <stop offset="70%" stop-color="#444" stop-opacity="0.9"/>
+        <stop offset="85%" stop-color="#222" stop-opacity="0.8"/>
+        <stop offset="100%" stop-color="#bbb" stop-opacity="0.7"/>
+    `;
+    defs.appendChild(grad);
+    // ჩრდილი
+    const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+    shadow.setAttribute('cx', x+3);
+    shadow.setAttribute('cy', y+3);
+    shadow.setAttribute('rx', HOLE_RADIUS*0.95);
+    shadow.setAttribute('ry', HOLE_RADIUS*0.7);
+    shadow.setAttribute('fill', 'rgba(0,0,0,0.18)');
+    shadow.setAttribute('pointer-events', 'none');
+    svg.appendChild(shadow);
+    // ბუდე
+    const hole = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    hole.setAttribute('cx', x);
+    hole.setAttribute('cy', y);
+    hole.setAttribute('r', HOLE_RADIUS);
+    hole.setAttribute('fill', `url(#${gradId})`);
+    hole.setAttribute('stroke', '#222');
+    hole.setAttribute('stroke-width', '2');
+    hole.setAttribute('pointer-events', 'none');
+    svg.appendChild(hole);
+    // ნომერი
+    const numText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    numText.setAttribute('x', x);
+    numText.setAttribute('y', y+5);
+    numText.setAttribute('text-anchor', 'middle');
+    numText.setAttribute('font-size', '12');
+    numText.setAttribute('fill', '#bbb');
+    numText.setAttribute('font-weight', 'bold');
+    numText.textContent = num;
+    numText.setAttribute('pointer-events', 'none');
+    svg.appendChild(numText);
+    // გამჭვირვალე clickable წრე
+    const clickable = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    clickable.setAttribute('cx', x);
+    clickable.setAttribute('cy', y);
+    clickable.setAttribute('r', HOLE_RADIUS);
+    clickable.setAttribute('fill', '#fff');
+    clickable.setAttribute('opacity', '0');
+    clickable.setAttribute('style', 'cursor:pointer; pointer-events:all;');
+    clickable.addEventListener('mousedown', e => {
+        if (window.isDragging) return; // არ დავუშვათ drag-ისას
+        if (window.selectedStoneId && window.allowedTargets && window.allowedTargets.includes(+num)) {
+            const stone = window.stonesState.find(s => s.id === window.selectedStoneId);
+            if (stone) {
+                window.holeState[stone.pos] = null;
+                stone.pos = +num;
+                window.holeState[num] = stone.id;
+                window.selectedStoneId = null;
+                window.renderBoard();
+            }
+        }
+    });
+    svg.appendChild(clickable);
+});
+
+// ქვებისთვის ხის ტექსტურის პატერნი
+function createWoodPattern(id, color) {
+    const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+    pattern.setAttribute('id', id);
+    pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+    pattern.setAttribute('width', '24');
+    pattern.setAttribute('height', '24');
+    // ხის ძირითადი ფონი
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', 0);
+    rect.setAttribute('y', 0);
+    rect.setAttribute('width', 24);
+    rect.setAttribute('height', 24);
+    rect.setAttribute('fill', color);
+    pattern.appendChild(rect);
+    // ხის ხაზები
+    for(let i=0; i<3; i++) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M${2+i*7},0 Q${4+i*7},12 ${2+i*7},24`);
+        path.setAttribute('stroke', '#fff8');
+        path.setAttribute('stroke-width', '1');
+        path.setAttribute('fill', 'none');
+        pattern.appendChild(path);
+        const path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path2.setAttribute('d', `M${5+i*7},0 Q${7+i*7},16 ${5+i*7},24`);
+        path2.setAttribute('stroke', '#0003');
+        path2.setAttribute('stroke-width', '0.7');
+        path2.setAttribute('fill', 'none');
+        pattern.appendChild(path2);
+    }
+    defs.appendChild(pattern);
+}
+
+// ქვებისთვის გრადიენტები (ნარდის სტილი, მკვეთრი ფერები)
+function createStoneGradient(id, color) {
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+    grad.setAttribute('id', id);
+    grad.setAttribute('cx', '50%');
+    grad.setAttribute('cy', '38%');
+    grad.setAttribute('r', '60%');
+    grad.innerHTML = `
+        <stop offset="0%" stop-color="#fff" stop-opacity="0.95"/>
+        <stop offset="40%" stop-color="${color}" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#222" stop-opacity="0.7"/>
+    `;
+    defs.appendChild(grad);
+}
+
+// ქვებისთვის გრადიენტები (ნარდის სტილი, ელიფსური ფორმა და ხის ტექსტურა)
+function createStoneGradient(id, color, patternId) {
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+    grad.setAttribute('id', id);
+    grad.setAttribute('cx', '50%');
+    grad.setAttribute('cy', '38%');
+    grad.setAttribute('r', '60%');
+    grad.innerHTML = `
+        <stop offset="0%" stop-color="#fff" stop-opacity="0.95"/>
+        <stop offset="40%" stop-color="url(#${patternId})" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#222" stop-opacity="0.7"/>
+    `;
+    defs.appendChild(grad);
+}
+
+// ქვებისთვის გრადიენტები (ნარდის სტილი, ელიფსური ფორმა და ხის ტექსტურა)
+function createStoneGradient(id, color) {
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+    grad.setAttribute('id', id);
+    grad.setAttribute('cx', '50%');
+    grad.setAttribute('cy', '38%');
+    grad.setAttribute('r', '60%');
+    grad.innerHTML = `
+        <stop offset="0%" stop-color="#fff" stop-opacity="0.95"/>
+        <stop offset="40%" stop-color="${color}" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#222" stop-opacity="0.7"/>
+    `;
+    defs.appendChild(grad);
+}
+
+// ქვების დახატვა (წრიული, მკვეთრი ფერები)
+stones.forEach(stone => {
+    const {x, y} = holeCoords[stone.pos];
+    const patternId = `woodpat_${stone.id}`;
+    createWoodPattern(patternId, stone.color);
+    const gradId = `stonegrad_${stone.id}`;
+    createStoneGradient(gradId, stone.color);
+    // ქვის ჩრდილი
+    const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+    shadow.setAttribute('cx', x+2);
+    shadow.setAttribute('cy', y+4);
+    shadow.setAttribute('rx', HOLE_RADIUS*0.95);
+    shadow.setAttribute('ry', HOLE_RADIUS*0.5);
+    shadow.setAttribute('fill', 'rgba(0,0,0,0.18)');
+    svg.appendChild(shadow);
+    // ქვა (წრიული)
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    s.setAttribute('cx', x);
+    s.setAttribute('cy', y);
+    s.setAttribute('r', HOLE_RADIUS*0.95);
+    s.setAttribute('fill', `url(#${gradId})`);
+    s.setAttribute('stroke', '#fff');
+    s.setAttribute('stroke-width', '1.5');
+    s.setAttribute('data-stone-id', stone.id);
+    svg.appendChild(s);
+    // highlight (ზედა შუქი)
+    const highlight = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+    highlight.setAttribute('cx', x-3);
+    highlight.setAttribute('cy', y-HOLE_RADIUS/2);
+    highlight.setAttribute('rx', HOLE_RADIUS*0.45);
+    highlight.setAttribute('ry', HOLE_RADIUS*0.18);
+    highlight.setAttribute('fill', 'rgba(255,255,255,0.38)');
+    svg.appendChild(highlight);
+});
+
+// ქვების მდგომარეობა და ბუდეების მდგომარეობა
+let stonesState = JSON.parse(JSON.stringify(stones)); // deep copy
+let holeState = {};
+Object.keys(holeCoords).forEach(num => { holeState[num] = null; });
+stonesState.forEach(stone => { holeState[stone.pos] = stone.id; });
+let selectedStoneId = null;
+let allowedTargets = [];
+// Drag-and-drop ცვლადები
+let draggedStoneId = null;
+let dragOffset = {x:0, y:0};
+let isDragging = false;
+let dragCurrentPos = {x:0, y:0};
+
+function getAllowedTargets(stone) {
+    const {rowIdx, colIdx} = holeIndexMap[stone.pos];
+    const targets = [];
+    // ოთხივე დიაგონალი
+    // ზემოთ მარცხნივ (colIdx-rowIdx == const, ორივე მცირდება)
+    let r = rowIdx-1, c = colIdx-1;
+    while (r >= 0 && c >= 0) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        if (!holeState[n]) targets.push(n);
+        r--; c--;
+    }
+    // ქვემოთ მარჯვნივ (colIdx-rowIdx == const, ორივე იზრდება)
+    r = rowIdx+1; c = colIdx+1;
+    while (r < ROWS.length && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        if (!holeState[n]) targets.push(n);
+        r++; c++;
+    }
+    // ზემოთ მარჯვნივ (colIdx+rowIdx == const, rowIdx მცირდება colIdx იზრდება)
+    r = rowIdx-1; c = colIdx+1;
+    while (r >= 0 && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        if (!holeState[n]) targets.push(n);
+        r--; c++;
+    }
+    // ქვემოთ მარცხნივ (colIdx+rowIdx == const, rowIdx იზრდება colIdx მცირდება)
+    r = rowIdx+1; c = colIdx-1;
+    while (r < ROWS.length && c >= 0) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        if (!holeState[n]) targets.push(n);
+        r++; c--;
+    }
+    return targets;
+}
+
+function getDiagonalHoles(stone) {
+    const {rowIdx, colIdx} = holeIndexMap[stone.pos];
+    const diagonals = [];
+    // ↖ ზემოთ მარცხნივ
+    let r = rowIdx-1, c = colIdx-1;
+    while (r >= 0 && c >= 0) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r--; c--;
+    }
+    // ↘ ქვემოთ მარჯვნივ
+    r = rowIdx+1; c = colIdx+1;
+    while (r < ROWS.length && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r++; c++;
+    }
+    // ↗ ზემოთ მარჯვნივ
+    r = rowIdx-1; c = colIdx+1;
+    while (r >= 0 && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r--; c++;
+    }
+    // ↙ ქვემოთ მარცხნივ
+    r = rowIdx+1; c = colIdx-1;
+    while (r < ROWS.length && c >= 0) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r++; c--;
+    }
+    return diagonals;
+}
+
+// მომხმარებლის მაგალითის დიაგონალები ბუდე 100-ისთვის
+const USER_DIAGONALS_100 = [88,76,65,55,34,22,10, 89,78,68,59,50,40, 108,112,115];
+
+// ყველა მიმართულებით სიარული (ვექტორების მიხედვით)
+function getCustomDiagonals(num) {
+    const {rowIdx, colIdx} = holeIndexMap[num];
+    const directions = [
+        {dr: -1, dc: -1}, // ↖
+        {dr: -1, dc: 0},  // ↑
+        {dr: -1, dc: 1},  // ↗
+        {dr: 0, dc: -1},  // ←
+        {dr: 0, dc: 1},   // →
+        {dr: 1, dc: -1},  // ↙
+        {dr: 1, dc: 0},   // ↓
+        {dr: 1, dc: 1},   // ↘
+    ];
+    const found = [];
+    directions.forEach(({dr, dc}) => {
+        let r = rowIdx + dr;
+        let c = colIdx + dc;
+        while (r >= 0 && r < ROWS.length && c >= 0 && c < ROWS[r]) {
+            const n = indexToNum[`${r},${c}`];
+            if (!n) break;
+            found.push(n);
+            r += dr;
+            c += dc;
+        }
+    });
+    return found;
+}
+
+// ყველა ბუდისთვის დიაგონალების გამოთვლა (ვარსკვლავის სხივების პრინციპით)
+function getStarDiagonals(num) {
+    const {rowIdx, colIdx} = holeIndexMap[num];
+    const diagonals = [];
+    // სხივი 1: ზემოთ მარცხნივ (↖)
+    let r = rowIdx-1, c = colIdx-1;
+    while (r >= 0 && c >= 0) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r--; c--;
+    }
+    // სხივი 2: ქვემოთ მარჯვნივ (↘)
+    r = rowIdx+1; c = colIdx+1;
+    while (r < ROWS.length && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r++; c++;
+    }
+    // სხივი 3: ზემოთ მარჯვნივ (↗)
+    r = rowIdx-1; c = colIdx+1;
+    while (r >= 0 && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r--; c++;
+    }
+    // სხივი 4: ქვემოთ მარცხნივ (↙)
+    r = rowIdx+1; c = colIdx-1;
+    while (r < ROWS.length && c >= 0) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r++; c--;
+    }
+    // სხივი 5: მარცხენა ვერტიკალი (←)
+    r = rowIdx; c = colIdx-1;
+    while (c >= 0) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        c--;
+    }
+    // სხივი 6: მარჯვენა ვერტიკალი (→)
+    r = rowIdx; c = colIdx+1;
+    while (c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        c++;
+    }
+    // სხივი 7: ზემოთ (↑)
+    r = rowIdx-1; c = colIdx;
+    while (r >= 0 && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r--;
+    }
+    // სხივი 8: ქვემოთ (↓)
+    r = rowIdx+1; c = colIdx;
+    while (r < ROWS.length && c < ROWS[r]) {
+        const n = indexToNum[`${r},${c}`];
+        if (!n) break;
+        diagonals.push(n);
+        r++;
+    }
+    return diagonals;
+}
+
+// ოთხი სხივის (↖, ↗, ↙, ↘) დიაგონალების გამოთვლა
+function getTrueDiagonals(num) {
+    const {rowIdx, colIdx} = holeIndexMap[num];
+    const directions = [
+        {dr: -1, dc: -1}, // ↖
+        {dr: -1, dc: 1},  // ↗
+        {dr: 1, dc: -1},  // ↙
+        {dr: 1, dc: 1},   // ↘
+    ];
+    const diagonals = [];
+    directions.forEach(({dr, dc}) => {
+        let r = rowIdx + dr;
+        let c = colIdx + dc;
+        while (r >= 0 && r < ROWS.length && c >= 0 && c < ROWS[r]) {
+            const n = indexToNum[`${r},${c}`];
+            if (!n) break;
+            diagonals.push(n);
+            r += dr;
+            c += dc;
+        }
+    });
+    return diagonals;
+}
+
+// თითოეული ბუდის ზუსტი დიაგონალები (მხოლოდ შენს მიერ მოწოდებული მაგალითები)
+const DIAGONALS = {
+    1: {
+        '↖': [],
+        '↗': [],
+        '↙': [3,6,13,24,35,45,54,63,73,84],
+        '↘': [4,8,16,28,40,51,61,71,82,94,106],
+    },
+    10: {
+        '↖': [],
+        '↗': [],
+        '↙': [21],
+        '↘': [22,34,45,55,65,76,88,100,108,112,115],
+    },
+    55: {
+        '↖': [45,34,22,10],
+        '↗': [46,36,25,14,7,4,2],
+        '↙': [64,74,85,96],
+        '↘': [65,76,88,100,108,112,115],
+    },
+    100: {
+        '↖': [88,76,65,55,34,22,10],
+        '↗': [89,78,68,59,50,40],
+        '↙': [108,112,115],
+        '↘': [],
+    },
+};
+
+// არჩეული ბუდის დიაგონალების მიღება ცხრილიდან (თუ არსებობს)
+function getManualDiagonals(num) {
+    if (DIAGONALS[num]) {
+        // ოთხივე სხივის გაერთიანება
+        return Object.values(DIAGONALS[num]).flat();
+    }
+    return [];
+}
+
+function getMousePos(evt) {
+    const rect = svg.getBoundingClientRect();
+    return {
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top
+    };
+}
+
+function getNearestHole(x, y) {
+    let minDist = Infinity, minNum = null;
+    Object.entries(holeCoords).forEach(([num, pos]) => {
+        const dx = pos.x - x;
+        const dy = pos.y - y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < minDist) {
+            minDist = dist;
+            minNum = +num;
+        }
+    });
+    return {num: minNum, dist: minDist};
+}
+
+function renderBoard() {
+    // წაშალე ძველი ქვები და ბუდეების ჰაილაითი
+    Array.from(svg.querySelectorAll('[data-stone-id], .stone-highlight, .hole-allowed, .hole-diagonal')).forEach(e => e.remove());
+    // ბუდეების ვიზუალური გამოყოფა (თუ არჩეული ქვაა)
+    if (selectedStoneId) {
+        const selectedStone = stonesState.find(s=>s.id===selectedStoneId);
+        allowedTargets = [];
+        let diagonalHoles = window.DIAGONALS && window.DIAGONALS[selectedStone.pos]
+            ? Object.values(window.DIAGONALS[selectedStone.pos]).flat()
+            : [];
+        diagonalHoles.forEach(num => {
+            if (!holeCoords[num]) return;
+            const {x, y} = holeCoords[num];
+            const diag = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            diag.setAttribute('cx', x);
+            diag.setAttribute('cy', y);
+            diag.setAttribute('r', HOLE_RADIUS*1.18);
+            diag.setAttribute('fill', '#00bfff');
+            diag.setAttribute('fill-opacity', '0.23');
+            diag.setAttribute('stroke', '#00bfff');
+            diag.setAttribute('stroke-width', '1.2');
+            diag.setAttribute('class', 'hole-diagonal');
+            diag.setAttribute('pointer-events', 'none');
+            svg.appendChild(diag);
+        });
+        diagonalHoles.forEach(num => {
+            if (!holeCoords[num]) return;
+            if (!holeState[num]) {
+                allowedTargets.push(num);
+                const {x, y} = holeCoords[num];
+                const highlight = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                highlight.setAttribute('cx', x);
+                highlight.setAttribute('cy', y);
+                highlight.setAttribute('r', HOLE_RADIUS*1.08);
+                highlight.setAttribute('fill', '#ff0');
+                highlight.setAttribute('fill-opacity', '0.22');
+                highlight.setAttribute('stroke', '#ff0');
+                highlight.setAttribute('stroke-width', '2');
+                highlight.setAttribute('class', 'hole-allowed');
+                highlight.setAttribute('pointer-events', 'none');
+                svg.appendChild(highlight);
+            }
+        });
+    } else {
+        allowedTargets = [];
+    }
+    // ქვების დახატვა (dragged ქვა მიჰყვება მაუსს)
+    stonesState.forEach(stone => {
+        let x = holeCoords[stone.pos].x;
+        let y = holeCoords[stone.pos].y;
+        let isDragged = (draggedStoneId === stone.id && isDragging);
+        if (isDragged) {
+            x = dragCurrentPos.x;
+            y = dragCurrentPos.y;
+        }
+        const gradId = `stonegrad_${stone.id}`;
+        createStoneGradient(gradId, stone.color);
+        // ჩრდილი
+        const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+        shadow.setAttribute('cx', x+2);
+        shadow.setAttribute('cy', y+4);
+        shadow.setAttribute('rx', HOLE_RADIUS*0.95);
+        shadow.setAttribute('ry', HOLE_RADIUS*0.5);
+        shadow.setAttribute('fill', 'rgba(0,0,0,0.18)');
+        shadow.setAttribute('class', 'stone-highlight');
+        svg.appendChild(shadow);
+        // ქვა
+        const s = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        s.setAttribute('cx', x);
+        s.setAttribute('cy', y);
+        s.setAttribute('r', HOLE_RADIUS*0.95);
+        s.setAttribute('fill', `url(#${gradId})`);
+        s.setAttribute('stroke', '#fff');
+        s.setAttribute('stroke-width', '1.5');
+        s.setAttribute('data-stone-id', stone.id);
+        if (selectedStoneId === stone.id) {
+            s.setAttribute('stroke', '#ff0');
+            s.setAttribute('stroke-width', '3');
+            s.setAttribute('filter', 'drop-shadow(0 0 6px #ff0a)');
+        }
+        s.style.cursor = 'pointer';
+        // Drag events
+        s.addEventListener('mousedown', e => {
+            e.stopPropagation();
+            draggedStoneId = stone.id;
+            isDragging = true;
+            const mouse = getMousePos(e);
+            dragOffset.x = mouse.x - x;
+            dragOffset.y = mouse.y - y;
+            dragCurrentPos.x = x;
+            dragCurrentPos.y = y;
+            selectedStoneId = stone.id;
+            renderBoard();
+        });
+        // Click (select) მხოლოდ თუ არ ხდება drag
+        s.addEventListener('click', e => {
+            if (isDragging) return;
+            e.stopPropagation();
+            if (selectedStoneId === stone.id) {
+                selectedStoneId = null;
+            } else {
+                selectedStoneId = stone.id;
+            }
+            renderBoard();
+        });
+        svg.appendChild(s);
+        // highlight (ზედა შუქი)
+        const highlight = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+        highlight.setAttribute('cx', x-3);
+        highlight.setAttribute('cy', y-HOLE_RADIUS/2);
+        highlight.setAttribute('rx', HOLE_RADIUS*0.45);
+        highlight.setAttribute('ry', HOLE_RADIUS*0.18);
+        highlight.setAttribute('fill', 'rgba(255,255,255,0.38)');
+        highlight.setAttribute('class', 'stone-highlight');
+        svg.appendChild(highlight);
+    });
+    // ქვების დახატვის შემდეგ დავხატავ 6 წითელ წრეს, თითო ფერის ქვების გარშემო
+    (function drawColorGroups() {
+        // წითელი ქვების ჯგუფის რადიუსი გამოვიყენოთ ყველა წრისთვის
+        const colorGroups = {};
+        stones.forEach(stone => {
+            if (!colorGroups[stone.color]) colorGroups[stone.color] = [];
+            colorGroups[stone.color].push(stone.pos);
+        });
+        // --- იდენტური რადიუსის გამოთვლა ---
+        // ზედა წრის ცენტრი (i=0)
+        const center = BOARD_CENTER;
+        const bigR = 200;
+        const angle0 = -Math.PI/2; // ზემოთ
+        const cx0 = center.x + bigR * Math.cos(angle0);
+        const cy0 = center.y + bigR * Math.sin(angle0) + 10; // ზემოთა წრის y (ჯამური ჩამოწევა)
+        // ბუდე 1-ის ცენტრი
+        const topHole = holeCoords[1];
+        // იდენტური რადიუსი: ზედა წრის ცენტრიდან ბუდე 1-მდე ვერტიკალური მანძილი
+        const identicalRadius = Math.abs(cy0 - topHole.y);
+        // --- ყველა წრის დახატვა ---
+        const redPositions = colorGroups['#e74c3c'].map(num => holeCoords[num]);
+        const redCx = redPositions.reduce((a, p) => a + p.x, 0) / redPositions.length;
+        let redCy = redPositions.reduce((a, p) => a + p.y, 0) / redPositions.length;
+        const redRadius = Math.max(...redPositions.map(p => Math.sqrt((p.x-redCx)**2 + (p.y-redCy)**2))) + HOLE_RADIUS*1.6;
+        // სიმეტრიული განლაგება: 6 წრე ვარსკვლავის წვერებზე
+        for(let i=0; i<6; i++) {
+            const angle = Math.PI/3 * i - Math.PI/2; // 0, 60, 120... გრადუსი, ზემოდან საათის ისრის მიმართულებით
+            let cx = center.x + bigR * Math.cos(angle);
+            let cy = center.y + bigR * Math.sin(angle);
+            if(i === 0) cy += 10; // ყველაზე ზემოთ მყოფი წრე ჩამოწიე 10 პიქსელით
+            if(i === 3) cy -= 10; // ქვედა წრე აწიე ზემოთ 10 პიქსელით
+            if(i === 4 || i === 5) cx += 16; // მარცხნივ მყოფი ორი წრე გაწიე მარჯვნივ 16 პიქსელით
+            if(i === 4 || i === 5) cx += 2; // ორივე მარცხენა წრე გაწიე მარჯვნივ 2 პიქსელით
+            if(i === 5) cy += 5; // მარცხენა ზედა წრე კიდევ ერთი პიქსელით ქვემოთ ჩამოწიე (ჯამში 5)
+            if(i === 4) cy -= 5; // მარცხენა ქვედა წრე კიდევ ერთი პიქსელით ზემოთ აწიე (ჯამში 5)
+            if(i === 1 || i === 2) cx -= 16; // მარჯვენა ორი წრე გაწიე მარცხნივ 16 პიქსელით
+            if(i === 1 || i === 2) cx -= 2; // ორივე მარჯვენა წრე გაწიე მარცხნივ 2 პიქსელით
+            if(i === 1) cy += 5; // მარჯვენა ზედა წრე დაწიე ქვემოთ 5 პიქსელით
+            if(i === 2) cy -= 5; // მარჯვენა ქვედა წრე აწიე მაღლა 5 პიქსელით
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', cx);
+            circle.setAttribute('cy', cy);
+            circle.setAttribute('r', redRadius - 50 + 20 + 5 + 3 + 2);
+            circle.setAttribute('stroke', 'red');
+            circle.setAttribute('stroke-width', '1');
+            circle.setAttribute('fill', 'none');
+            circle.setAttribute('pointer-events', 'none');
+            svg.appendChild(circle);
+        }
+    })();
+}
+
+// SVG-ზე mousemove და mouseup გლობალურად
+svg.addEventListener('mousemove', e => {
+    if (!isDragging || !draggedStoneId) return;
+    const mouse = getMousePos(e);
+    dragCurrentPos.x = mouse.x - dragOffset.x;
+    dragCurrentPos.y = mouse.y - dragOffset.y;
+    renderBoard();
+});
+svg.addEventListener('mouseup', e => {
+    if (!isDragging || !draggedStoneId) return;
+    const mouse = getMousePos(e);
+    // ვიპოვოთ უახლოესი ბუდე
+    const {num, dist} = getNearestHole(mouse.x, mouse.y);
+    const stone = stonesState.find(s => s.id === draggedStoneId);
+    let canDrop = false;
+    if (stone && window.DIAGONALS && window.DIAGONALS[stone.pos]) {
+        const allowed = Object.values(window.DIAGONALS[stone.pos]).flat();
+        canDrop = allowed.includes(num) && !holeState[num] && dist < HOLE_RADIUS*1.8;
+    }
+    if (canDrop) {
+        holeState[stone.pos] = null;
+        stone.pos = num;
+        holeState[num] = stone.id;
+    }
+    // Reset drag state
+    isDragging = false;
+    draggedStoneId = null;
+    selectedStoneId = null;
+    renderBoard();
+});
+// window-ზე mouseup (თუ მაუსი გავიდა SVG-დან)
+window.addEventListener('mouseup', e => {
+    if (!isDragging || !draggedStoneId) return;
+    isDragging = false;
+    draggedStoneId = null;
+    selectedStoneId = null;
+    renderBoard();
+});
+
+// ჩატვირთე DIAGONALS გარე JSON-დან
+fetch('assets/diagonals115.json')
+  .then(r => r.json())
+  .then(data => { window.DIAGONALS = data; renderBoard(); });
+</script>
+</body>
+</html> 
