@@ -4,31 +4,16 @@
     <meta charset="UTF-8">
     <title>Great 7</title>
     <style>
-    @font-face {
-      font-family: 'Stardos Stencil';
-      src: url('assets/fonts/StardosStencil-Bold.ttf') format('truetype');
-      font-weight: bold;
-      font-style: normal;
-      font-display: swap;
-    }
-    body { background: #222; color: #fff; font-family: sans-serif; }
-    .container { max-width: 900px; margin: 40px auto; background: #333; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px #0008; }
-    h2.great7-western {
-        text-align: center;
-        font-family: 'Stardos Stencil', cursive !important;
-        font-size: 2.7em;
-        letter-spacing: 0.04em;
-        color: #ffe7b3;
-        text-shadow: 0 2px 0 #000, 0 0 12px #a97b3a88;
-        font-weight: bold !important;
-    }
-    .legend { text-align: center; margin-top: 12px; color: #bbb; }
+        body { background: #222; color: #fff; font-family: sans-serif; }
+        .container { max-width: 900px; margin: 40px auto; background: #333; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px #0008; }
+        h2 { text-align: center; }
+        .board-wrap { display: flex; justify-content: center; }
+        .legend { text-align: center; margin-top: 12px; color: #bbb; }
     </style>
 </head>
 <body>
-<button id="lobby-btn" style="position:fixed;top:18px;right:24px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;">ლობი</button>
 <div class="container">
-    <h2 class="great7-western" style="font-family: 'Stardos Stencil', cursive !important; font-weight: bold !important;">Great 7</h2>
+    <h2>Great 7</h2>
     <div class="board-wrap">
         <svg id="board" width="700" height="700" viewBox="0 0 700 700"></svg>
     </div>
@@ -87,7 +72,7 @@ const outer = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
 outer.setAttribute('cx', BOARD_CENTER.x);
 outer.setAttribute('cy', BOARD_CENTER.y);
 outer.setAttribute('r', HOLE_RADIUS * 320);
-outer.setAttribute('fill', 'url(#board-wood)'); // ხის ფაქტურა
+outer.setAttribute('fill', '#888');
 outer.setAttribute('stroke', '#222');
 outer.setAttribute('stroke-width', '10');
 svg.appendChild(outer);
@@ -95,32 +80,6 @@ svg.appendChild(outer);
 // SVG defs: gradients for holes and stones
 const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
 svg.appendChild(defs);
-
-// --- დაფის ხის ფაქტურის pattern ---
-const boardWood = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
-boardWood.setAttribute('id', 'board-wood');
-boardWood.setAttribute('patternUnits', 'userSpaceOnUse');
-boardWood.setAttribute('width', '120');
-boardWood.setAttribute('height', '120');
-// ძირითადი მუქი ფონი
-const woodBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-woodBg.setAttribute('x', 0);
-woodBg.setAttribute('y', 0);
-woodBg.setAttribute('width', 120);
-woodBg.setAttribute('height', 120);
-woodBg.setAttribute('fill', '#2a1d0a');
-boardWood.appendChild(woodBg);
-// მხოლოდ ორი მსუბუქი ტალღა
-for(let i=0; i<2; i++) {
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', `M0,${40+i*40} Q30,${30+i*40} 60,${50+i*40} T120,${40+i*40}`);
-  path.setAttribute('stroke', '#4b341a');
-  path.setAttribute('stroke-width', '1.2');
-  path.setAttribute('fill', 'none');
-  path.setAttribute('opacity', '0.18');
-  boardWood.appendChild(path);
-}
-defs.appendChild(boardWood);
 
 // დახატე ბუდეები (ჩაღრმავებული ეფექტით, რიცხვით)
 Object.entries(holeCoords).forEach(([num, {x, y}]) => {
@@ -164,7 +123,7 @@ Object.entries(holeCoords).forEach(([num, {x, y}]) => {
     numText.setAttribute('y', y+5);
     numText.setAttribute('text-anchor', 'middle');
     numText.setAttribute('font-size', '9.6');
-    numText.setAttribute('fill', '#000');
+    numText.setAttribute('fill', '#bbb');
     numText.setAttribute('font-weight', 'bold');
     numText.textContent = num;
     numText.setAttribute('pointer-events', 'none');
@@ -773,8 +732,6 @@ function renderBoard() {
     }
     // ქვების დახატვა (dragged ქვა მიჰყვება მაუსს)
     stonesState.forEach(stone => {
-        if (playerCount === 2 && !(stone.color === STONE_COLORS.red || stone.color === STONE_COLORS.green)) return;
-        if (playerCount < 6 && hiddenColors.includes(stone.color)) return;
         let x = holeCoords[stone.pos].x;
         let y = holeCoords[stone.pos].y;
         let isDragged = (draggedStoneId === stone.id && isDragging);
@@ -884,12 +841,6 @@ function renderBoard() {
             if(i === 2) cy -= 5; // მარჯვენა ქვედა წრე აწიე მაღლა 5 პიქსელით
             // ფერები: 0=მწვანე, 1=ბადრიჯნისფერი, 2=ყვითელი, 3=წითელი, 4=ცისფერი, 5=ნარინჯისფერი
             const circleColors = [STONE_COLORS.green, STONE_COLORS.navy, STONE_COLORS.yellow, STONE_COLORS.red, STONE_COLORS.blue, STONE_COLORS.orange];
-            if (
-                (playerCount === 2 && ![3,0].includes(i)) ||
-                (playerCount === 3 && [2,5,4].includes(i)) ||
-                (playerCount === 4 && [2,5].includes(i)) ||
-                (playerCount === 5 && i === 2)
-            ) continue;
             // --- ახალი ლოგიკა: თუ ყველა ბუდე შევსებულია ერთ ფერად ქვაზე, წრის ფერი იცვლება ---
             const groupHoles = RING_GROUPS[i];
             const groupStones = groupHoles.map(num => holeState[String(num)] && stonesState.find(s=>s.id===holeState[String(num)]));
@@ -959,91 +910,6 @@ window.addEventListener('mouseup', e => {
 fetch('assets/diagonals115.json')
   .then(r => r.json())
   .then(data => { window.DIAGONALS = data; renderBoard(); });
-
-// მოთამაშეების რაოდენობის წამოღება ლობიდან
-let playerCount = 6;
-try {
-    const lobby = JSON.parse(localStorage.getItem('great7-lobby'));
-    if (lobby && lobby.n) playerCount = parseInt(lobby.n, 10);
-} catch (e) {}
-// ფერები, რომლებიც უნდა დამალოს მოთამაშეების რაოდენობის მიხედვით
-const colorHideMap = {
-    6: [],
-    5: [STONE_COLORS.yellow],
-    4: [STONE_COLORS.yellow, STONE_COLORS.orange],
-    3: [STONE_COLORS.yellow, STONE_COLORS.orange, STONE_COLORS.blue],
-    2: [STONE_COLORS.yellow, STONE_COLORS.orange, STONE_COLORS.blue, STONE_COLORS.navy], // მხოლოდ წითელი და მწვანე ჩანს
-};
-let hiddenColors = colorHideMap[playerCount] || [];
-
-function filterActiveStonesByPlayerCount() {
-    // გამოიყენე იგივე hiddenColors ლოგიკა რაც ქვემოთ
-    let playerCount = 6;
-    try {
-        const lobby = JSON.parse(localStorage.getItem('great7-lobby'));
-        if (lobby && lobby.n) playerCount = parseInt(lobby.n, 10);
-    } catch (e) {}
-    const colorHideMap = {
-        6: [],
-        5: [STONE_COLORS.yellow],
-        4: [STONE_COLORS.yellow, STONE_COLORS.orange],
-        3: [STONE_COLORS.yellow, STONE_COLORS.orange, STONE_COLORS.blue],
-        2: [STONE_COLORS.yellow, STONE_COLORS.orange, STONE_COLORS.blue, STONE_COLORS.navy],
-    };
-    let hiddenColors = colorHideMap[playerCount] || [];
-    // გაფილტრე ქვები
-    return stones.filter(stone => !hiddenColors.includes(stone.color));
-}
-
-function resetStonesState() {
-    // მხოლოდ აქტიური ქვები დარჩეს
-    stonesState = JSON.parse(JSON.stringify(filterActiveStonesByPlayerCount()));
-    holeState = {};
-    Object.keys(holeCoords).forEach(num => { holeState[num] = null; });
-    stonesState.forEach(stone => { holeState[stone.pos] = stone.id; });
-}
-
-// თამაშის ინიციალიზაციის შემდეგ და renderBoard-ში, ქვების დახატვამდე, გამოიძახე resetStonesState();
-// მაგალითად, renderBoard-ის დასაწყისში დაამატე:
-resetStonesState();
-
-// Popup ფუნქციონალი
-function showExitPopup() {
-  let popup = document.getElementById('exit-popup');
-  if (!popup) {
-    popup = document.createElement('div');
-    popup.id = 'exit-popup';
-    popup.style.position = 'fixed';
-    popup.style.top = '0';
-    popup.style.left = '0';
-    popup.style.width = '100vw';
-    popup.style.height = '100vh';
-    popup.style.background = 'rgba(0,0,0,0.32)';
-    popup.style.display = 'flex';
-    popup.style.alignItems = 'center';
-    popup.style.justifyContent = 'center';
-    popup.style.zIndex = '2000';
-    popup.innerHTML = `
-      <div style="background:#fff;color:#222;padding:32px 28px 24px 28px;border-radius:16px;box-shadow:0 2px 24px #0008;min-width:260px;text-align:center;max-width:90vw;">
-        <div style="font-size:1.2em;margin-bottom:18px;">ნამდვილად გსურთ თამაშიდან გასვლა?</div>
-        <div style="display:flex;gap:18px;justify-content:center;">
-          <button id="exit-yes" style="background:#e74c3c;color:#fff;padding:8px 22px;font-size:1.1em;border:none;border-radius:7px;cursor:pointer;">დიახ</button>
-          <button id="exit-no" style="background:#bbb;color:#222;padding:8px 22px;font-size:1.1em;border:none;border-radius:7px;cursor:pointer;">არა</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(popup);
-    document.getElementById('exit-yes').onclick = function() {
-      // TODO: მომავალში ჩავთვალოთ მოწინააღმდეგის მოგება ან ჩავანაცვლოთ ბოტით
-      window.location.href = 'index.html';
-    };
-    document.getElementById('exit-no').onclick = function() {
-      popup.remove();
-    };
-  }
-}
-
-document.getElementById('lobby-btn').onclick = showExitPopup;
 </script>
 </body>
 </html> 

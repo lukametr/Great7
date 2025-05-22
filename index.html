@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8">
+  <title>Great 7</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    @font-face {
+      font-family: 'Stardos Stencil';
+      src: url('assets/fonts/StardosStencil-Bold.ttf') format('truetype');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+    }
+    body { background: #23272f; color: #fff; font-family: 'Segoe UI', sans-serif; margin: 0; }
+    .container { max-width: 480px; margin: 40px auto; background: #2d323c; padding: 32px 24px 24px 24px; border-radius: 16px; box-shadow: 0 2px 16px #0006; }
+    h1.great7-western {
+      text-align: center;
+      font-family: 'Stardos Stencil', cursive !important;
+      font-size: 2.7em;
+      letter-spacing: 0.04em;
+      color: #ffe7b3;
+      text-shadow: 0 2px 0 #000, 0 0 12px #a97b3a88;
+      font-weight: bold !important;
+      margin-bottom: 0.2em;
+    }
+    .lang-switch { float: right; margin-top: -8px; }
+    .lang-btn { background: #444; color: #fff; border: none; border-radius: 6px; padding: 4px 12px; margin-left: 6px; cursor: pointer; font-size: 1em; }
+    .lang-btn.active { background: #ffb300; color: #222; font-weight: bold; }
+    .section { margin: 24px 0 16px 0; }
+    label { display: block; margin-bottom: 6px; font-weight: 500; }
+    select, input[type=text] { width: 100%; padding: 8px; border-radius: 6px; border: none; margin-bottom: 12px; font-size: 1em; background: #222; color: #fff; }
+    .mode-btns { display: flex; gap: 12px; margin-bottom: 12px; }
+    .mode-btn { flex: 1; padding: 10px 0; border-radius: 6px; border: none; background: #444; color: #fff; font-size: 1em; cursor: pointer; transition: background 0.2s; }
+    .mode-btn.active { background: #00e0ff; color: #222; font-weight: bold; }
+    .players-list { margin-bottom: 12px; }
+    .players-list input { margin-bottom: 6px; }
+    .start-btn { width: 100%; padding: 12px 0; font-size: 1.2em; border-radius: 8px; border: none; background: #ffb300; color: #222; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    .rules { background: #23272f; border-radius: 10px; padding: 16px; margin-top: 18px; font-size: 1em; color: #ffe; }
+    @media (max-width: 600px) { .container { padding: 12px 2vw; } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="lang-switch">
+    <button class="lang-btn active" id="lang-ka">ქართული</button>
+    <button class="lang-btn" id="lang-en">English</button>
+  </div>
+  <h1 id="title" class="great7-western">Great 7</h1>
+  <div class="section">
+    <label id="mode-label">თამაშის რეჟიმი</label>
+    <div class="mode-btns">
+      <button class="mode-btn active" id="mode-human">მოთამაშეები</button>
+      <button class="mode-btn" id="mode-bot">ბოტი</button>
+    </div>
+  </div>
+  <div class="section">
+    <label id="players-label">მოთამაშეების რაოდენობა</label>
+    <select id="player-count">
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+    <div class="players-list" id="players-list"></div>
+  </div>
+  <div class="section">
+    <label id="register-label">რეგისტრაცია</label>
+    <input type="text" id="player-name" maxlength="16" placeholder="თქვენი სახელი">
+  </div>
+  <button class="start-btn" id="start-btn">დაწყება</button>
+  <div class="rules" id="rules-block"></div>
+</div>
+<script>
+const i18n = {
+  ka: {
+    title: "Great 7",
+    mode: "თამაშის რეჟიმი",
+    human: "მოთამაშეები",
+    bot: "ბოტი",
+    players: "მოთამაშეების რაოდენობა",
+    register: "რეგისტრაცია",
+    namePlaceholder: "თქვენი სახელი",
+    start: "დაწყება",
+    rules: `<b>თამაშის წესები:</b><br>115-ბუდიანი ვარსკვლავის დაფა. თითოეულ მოთამაშეს აქვს თავისი ქვები. ქვის გადაადგილება შესაძლებელია მხოლოდ დიაგონალებზე, ან გადახტომით (განსაკუთრებული წესით). მიზანია ყველა ქვა გადაიტანო საპირისპირო წვერზე.<br><br><b>გადახტომის წესი:</b> თუ ტრაექტორიაზე არის სხვა ქვა და თქვენსა და მას შორის N თავისუფალი ბუდეა, შეგიძლიათ გადახტეთ ამ ქვიდან N+1-ეზე, თუ გზაში ყველა ბუდე თავისუფალია.<br><br>დეტალური წესები იხილეთ თამაშის გვერდზე.`
+  },
+  en: {
+    title: "Great 7",
+    mode: "Game Mode",
+    human: "Players",
+    bot: "Bot",
+    players: "Number of players",
+    register: "Registration",
+    namePlaceholder: "Your name",
+    start: "Start",
+    rules: `<b>Game rules:</b><br>115-hole star board. Each player has their own stones. Stones move only along diagonals or by jumping (special rule). The goal is to move all your stones to the opposite corner.<br><br><b>Jump rule:</b> If there is another stone on the trajectory and there are N empty holes between you and it, you can jump to the N+1-th hole after that stone, if all holes in between are empty.<br><br>See full rules on the game page.`
+  }
+};
+
+let lang = 'ka';
+const $ = id => document.getElementById(id);
+
+function updateTexts() {
+  $("title").textContent = i18n[lang].title;
+  $("mode-label").textContent = i18n[lang].mode;
+  $("mode-human").textContent = i18n[lang].human;
+  $("mode-bot").textContent = i18n[lang].bot;
+  $("players-label").textContent = i18n[lang].players;
+  $("register-label").textContent = i18n[lang].register;
+  $("player-name").placeholder = i18n[lang].namePlaceholder;
+  $("start-btn").textContent = i18n[lang].start;
+  $("rules-block").innerHTML = i18n[lang].rules;
+}
+
+function setLang(newLang) {
+  lang = newLang;
+  $("lang-ka").classList.toggle('active', lang==='ka');
+  $("lang-en").classList.toggle('active', lang==='en');
+  document.documentElement.lang = lang;
+  updateTexts();
+}
+
+$("lang-ka").onclick = () => setLang('ka');
+$("lang-en").onclick = () => setLang('en');
+
+// Mode selection
+let mode = 'human';
+$("mode-human").onclick = () => { mode = 'human'; $("mode-human").classList.add('active'); $("mode-bot").classList.remove('active'); };
+$("mode-bot").onclick = () => { mode = 'bot'; $("mode-bot").classList.add('active'); $("mode-human").classList.remove('active'); };
+
+// Players list
+function renderPlayersList() {
+  const n = parseInt($("player-count").value, 10);
+  let html = '';
+  for (let i=1; i<=n; ++i) {
+    html += `<input type="text" maxlength="16" placeholder="${i18n[lang].namePlaceholder} #${i}" value="${lang==='ka' ? 'მოთამაშე' : 'Player'} ${i}">`;
+  }
+  $("players-list").innerHTML = html;
+}
+$("player-count").onchange = renderPlayersList;
+renderPlayersList();
+
+// Start button
+$("start-btn").onclick = () => {
+  // Collect settings
+  const n = parseInt($("player-count").value, 10);
+  const names = Array.from($("players-list").querySelectorAll('input')).map(x=>x.value.trim()||((lang==='ka'?'მოთამაშე':'Player')+' ?'));
+  const regName = $("player-name").value.trim();
+  const params = {
+    lang,
+    mode,
+    n,
+    names,
+    regName
+  };
+  localStorage.setItem('great7-lobby', JSON.stringify(params));
+  window.location.href = 'great7.html';
+};
+
+// Initial
+updateTexts();
+</script>
+</body>
+</html> 
