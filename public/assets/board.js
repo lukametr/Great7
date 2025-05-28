@@ -290,3 +290,25 @@ export function setStonesState(newState) {
     Object.keys(holeState).forEach(k => { holeState[k] = null; });
     stonesState.forEach(stone => { holeState[stone.pos] = stone.id; });
 }
+
+// --- Winner visual effects ---
+export function ensureWinnerGlowFilter(svg) {
+    if (!svg.querySelector('#glow')) {
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+        filter.setAttribute('id', 'glow');
+        filter.setAttribute('x', '-50%');
+        filter.setAttribute('y', '-50%');
+        filter.setAttribute('width', '200%');
+        filter.setAttribute('height', '200%');
+        const blur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+        blur.setAttribute('stdDeviation', '6');
+        blur.setAttribute('result', 'coloredBlur');
+        filter.appendChild(blur);
+        defs.appendChild(filter);
+        svg.insertBefore(defs, svg.firstChild);
+    }
+}
+export function clearWinnerHighlights(svg) {
+    Array.from(svg.querySelectorAll('.winner-glow')).forEach(e => e.remove());
+}

@@ -176,12 +176,21 @@ window.addEventListener('DOMContentLoaded', () => {
                     network.sendWSMessage({ type: 'join', name: getCurrentUserName() });
                     return;
                 }
+                if (data.type === 'game-over' && data.winner) {
+                    // Highlight the winner's target ring
+                    highlightWinnerRing(data.winner.color);
+                    // Show winner message
+                    showWinnerMessage(data.winner.color, colorNames[data.winner.userId] || '');
+                    // Prevent further moves
+                    window.GAME_OVER = true;
+                }
             }
         );
     }
 
     // ქვებზე click-to-move ლოგიკა
     svg.addEventListener('click', e => {
+        if (window.GAME_OVER) return;
         if (Object.keys(colorPlayers).length < playerCount) return;
         if (!myColor || !currentTurnColor || board.STONE_COLORS[myColor] !== currentTurnColor) return;
         const target = e.target.closest('circle[data-stone-id]');
@@ -208,6 +217,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // --- Handle click-to-move events from board.js ---
     svg.addEventListener('board-hole-click', e => {
+        if (window.GAME_OVER) return;
         if (!selectedStoneId) return;
         const targetNum = e.detail.targetNum;
         const stone = board.stonesState.find(s => s.id === selectedStoneId);
@@ -382,6 +392,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // On initial load, show player list
     renderPlayerList(currentTurnColor);
+
+    // Remove winner message and confetti if present
+    const msgDiv = document.getElementById('winner-message');
+    if (msgDiv) msgDiv.remove();
+    const confetti = document.getElementById('confetti-canvas');
+    if (confetti) confetti.remove();
+    const svg = document.getElementById('board');
+    if (svg) board.clearWinnerHighlights(svg);
 }); 
 
 function tryAutoAssignColor() {
@@ -403,4 +421,121 @@ function tryAutoAssignColor() {
         pendingColor = freeColor;
         network.sendWSMessage({ type: 'choose-color', color: board.STONE_COLORS[freeColor] });
     }
+}
+
+// --- Winner ring highlight and message ---
+function highlightWinnerRing(winnerColor) {
+    // Map color to target ring
+    const colorToTargetRing = {
+        '#e74c3c': [1,2,3,4,5,7,8], // red -> green ring
+        '#2ecc40': [108,109,111,112,113,114,115], // green -> red ring
+        '#3498db': [10,11,21,22,23,33,34], // blue -> orange ring
+        '#3a3a7a': [82,83,93,94,95,105,106], // navy -> yellow ring
+        '#ff9800': [73,74,84,85,86,96,97], // orange -> blue ring
+        '#f1c40f': [19,20,30,31,32,42,43], // yellow -> navy ring
+    };
+    const ring = colorToTargetRing[winnerColor];
+    if (!ring) return;
+    const svg = document.getElementById('board');
+    board.ensureWinnerGlowFilter(svg);
+    board.clearWinnerHighlights(svg);
+    ring.forEach(num => {
+        const el = svg.querySelector(`circle.board-hole[data-hole-num="${num}"]`);
+        // fallback: highlight by drawing a glowing circle over each hole
+        if (el) {
+            const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            glow.setAttribute('cx', el.getAttribute('cx'));
+            glow.setAttribute('cy', el.getAttribute('cy'));
+            glow.setAttribute('r', el.getAttribute('r'));
+            glow.setAttribute('fill', 'none');
+            glow.setAttribute('stroke', winnerColor);
+            glow.setAttribute('stroke-width', '7');
+            glow.setAttribute('filter', 'url(#glow)');
+            glow.setAttribute('class', 'winner-glow');
+            svg.appendChild(glow);
+        }
+    });
+    // Add confetti overlay
+    showConfetti();
+}
+function showWinnerMessage(winnerColor, winnerName) {
+    let msgDiv = document.getElementById('winner-message');
+    if (!msgDiv) {
+        msgDiv = document.createElement('div');
+        msgDiv.id = 'winner-message';
+        msgDiv.style.position = 'absolute';
+        msgDiv.style.top = '50%';
+        msgDiv.style.left = '50%';
+        msgDiv.style.transform = 'translate(-50%, -50%)';
+        msgDiv.style.background = 'rgba(30,30,30,0.97)';
+        msgDiv.style.padding = '32px 48px';
+        msgDiv.style.borderRadius = '18px';
+        msgDiv.style.boxShadow = '0 4px 32px #000a';
+        msgDiv.style.fontSize = '2.1em';
+        msgDiv.style.color = winnerColor;
+        msgDiv.style.zIndex = '2000';
+        msgDiv.style.textAlign = 'center';
+        document.body.appendChild(msgDiv);
+    }
+    msgDiv.innerHTML = `<div style='font-size:2.5em;margin-bottom:0.2em;'>🎉</div><b style='color:${winnerColor};font-size:1.2em;'>${winnerName || 'მოთამაშე'}</b><br><span style='color:#fff;font-size:0.8em;'>მოიგო!</span>`;
+}
+// --- Confetti effect ---
+function showConfetti() {
+    if (document.getElementById('confetti-canvas')) return;
+    const canvas = document.createElement('canvas');
+    canvas.id = 'confetti-canvas';
+    canvas.style.position = 'fixed';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.width = '100vw';
+    canvas.style.height = '100vh';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '3000';
+    document.body.appendChild(canvas);
+    // Simple confetti animation (minimal, for effect)
+    const ctx = canvas.getContext('2d');
+    const W = window.innerWidth, H = window.innerHeight;
+    canvas.width = W; canvas.height = H;
+    const confetti = Array.from({length: 80}, () => ({
+        x: Math.random()*W,
+        y: Math.random()*-H,
+        r: 6+Math.random()*8,
+        d: 8+Math.random()*12,
+        color: `hsl(${Math.random()*360},90%,60%)`,
+        tilt: Math.random()*10-5,
+        tiltAngle: 0,
+        tiltAngleInc: (Math.random()*0.07)+0.05
+    }));
+    function draw() {
+        ctx.clearRect(0,0,W,H);
+        confetti.forEach(c => {
+            ctx.beginPath();
+            ctx.ellipse(c.x, c.y, c.r, c.r/2, c.tilt, 0, 2*Math.PI);
+            ctx.fillStyle = c.color;
+            ctx.fill();
+        });
+    }
+    function update() {
+        confetti.forEach(c => {
+            c.y += c.d/3;
+            c.tilt += c.tiltAngleInc;
+            c.x += Math.sin(c.tilt);
+            if (c.y > H+20) {
+                c.x = Math.random()*W;
+                c.y = Math.random()*-40;
+            }
+        });
+    }
+    let running = true;
+    function loop() {
+        if (!running) return;
+        draw();
+        update();
+        requestAnimationFrame(loop);
+    }
+    loop();
+    setTimeout(() => {
+        running = false;
+        canvas.remove();
+    }, 4200);
 } 
