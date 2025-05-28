@@ -22,9 +22,11 @@ let finishTurnBtn = null;
 let visitedJumpPositions = new Set();
 let colorNames = {};
 
+let svg = null;
+
 window.addEventListener('DOMContentLoaded', () => {
     // SVG ელემენტის რეგისტრაცია
-    const svg = document.getElementById('board');
+    svg = document.getElementById('board');
     board.setSVGElement(svg);
     board.drawStaticColorGroups(svg);
     ui.initLobbyButton();
@@ -191,6 +193,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // ქვებზე click-to-move ლოგიკა
     svg.addEventListener('click', e => {
         if (window.GAME_OVER) return;
+        if (window.MOVE_DONE) return;
         if (Object.keys(colorPlayers).length < playerCount) return;
         if (!myColor || !currentTurnColor || board.STONE_COLORS[myColor] !== currentTurnColor) return;
         const target = e.target.closest('circle[data-stone-id]');
@@ -205,7 +208,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     allowedTargets = [];
                     jumpTargets = [];
                     visitedJumpPositions.clear();
-                } else {
+                } else if (!window.MOVE_DONE) {
                     selectedStoneId = stoneId;
                     allowedTargets = gameLogic.getImmediateTargetsFromDiagonals(stone, DIAGONALS, board.holeState);
                     jumpTargets = gameLogic.getJumpTargetsFromDiagonals(stone, DIAGONALS, board.holeState, visitedJumpPositions);
@@ -218,6 +221,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // --- Handle click-to-move events from board.js ---
     svg.addEventListener('board-hole-click', e => {
         if (window.GAME_OVER) return;
+        if (window.MOVE_DONE) return;
         if (!selectedStoneId) return;
         const targetNum = e.detail.targetNum;
         const stone = board.stonesState.find(s => s.id === selectedStoneId);
@@ -260,23 +264,11 @@ window.addEventListener('DOMContentLoaded', () => {
                 canJumpAgain
             });
         }
-        // Update Finish Turn button state (same as in drag logic)
-        if (moveType === 'jump') {
-            const furtherJumps = gameLogic.getJumpTargetsFromDiagonals(stone, DIAGONALS, board.holeState, visitedJumpPositions);
-            if (furtherJumps && furtherJumps.length > 0) {
-                finishTurnBtn.disabled = false;
-                finishTurnBtn.style.opacity = '1';
-                finishTurnBtn.style.cursor = 'pointer';
-            } else {
-                finishTurnBtn.disabled = true;
-                finishTurnBtn.style.opacity = '0.45';
-                finishTurnBtn.style.cursor = 'not-allowed';
-            }
-        } else {
-            finishTurnBtn.disabled = true;
-            finishTurnBtn.style.opacity = '0.45';
-            finishTurnBtn.style.cursor = 'not-allowed';
-        }
+        // After move, prevent further moves until next turn
+        window.MOVE_DONE = true;
+        finishTurnBtn.disabled = false;
+        finishTurnBtn.style.opacity = '1';
+        finishTurnBtn.style.cursor = 'pointer';
         finishTurnBtn.style.display = 'block';
         // Deselect after move
         selectedStoneId = null;
@@ -398,8 +390,44 @@ window.addEventListener('DOMContentLoaded', () => {
     if (msgDiv) msgDiv.remove();
     const confetti = document.getElementById('confetti-canvas');
     if (confetti) confetti.remove();
-    const svg = document.getElementById('board');
     if (svg) board.clearWinnerHighlights(svg);
+
+    // Finish Turn button click handler
+    finishTurnBtn.addEventListener('click', () => {
+        if (window.GAME_OVER) return;
+        if (finishTurnBtn.disabled) return;
+        if (ws && ws.readyState === window.WebSocket.OPEN) {
+            network.sendWSMessage({ type: 'finish-turn' });
+        }
+        window.MOVE_DONE = false;
+        finishTurnBtn.disabled = true;
+        finishTurnBtn.style.opacity = '0.45';
+        finishTurnBtn.style.cursor = 'not-allowed';
+        finishTurnBtn.style.display = 'none';
+    });
+
+    // On new turn, reset MOVE_DONE
+    function onNewTurn() {
+        window.MOVE_DONE = false;
+        finishTurnBtn.disabled = true;
+        finishTurnBtn.style.opacity = '0.45';
+        finishTurnBtn.style.cursor = 'not-allowed';
+        finishTurnBtn.style.display = 'block';
+    }
+
+    // Listen for whose-turn
+    network.initWebSocket = ((orig) => function(...args) {
+        const cb = args[1];
+        args[1] = function(msg) {
+            let data;
+            try { data = JSON.parse(msg.data); } catch (e) { return; }
+            if (data.type === 'whose-turn') {
+                onNewTurn();
+            }
+            return cb(msg);
+        };
+        return orig.apply(this, args);
+    })(network.initWebSocket);
 }); 
 
 function tryAutoAssignColor() {
