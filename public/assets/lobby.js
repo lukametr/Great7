@@ -269,8 +269,9 @@ async function renderLobby(keepUser) {
   }
   el.innerHTML = `
     <div class="lobby-header" role="navigation">
+      <button class="main-btn" id="lang-switch-btn" style="margin-right:8px;">${lang==='en'?'EN':'ქარ'}</button>
       <span class="lobby-user">${user.name} (${user.email})</span>
-      <button class="main-btn" id="rules-btn" aria-label="თამაშის წესები" tabindex="0">${lang==='en'?'Game Rules':'თამაშის წესები'}</button>
+      <button class="main-btn" id="rules-btn" aria-label="თამაშის წესები" tabindex="0">თამაშის წესები</button>
       <button class="main-btn" id="profile-btn" aria-label="პროფილი" tabindex="0">${t('profile')}</button>
       <button class="main-btn" id="logout-btn" aria-label="გამოსვლა" tabindex="0">${t('logout')}</button>
     </div>
@@ -376,6 +377,15 @@ async function renderLobby(keepUser) {
     header.appendChild(wrap);
   }
   renderLangDropdown('lang-switch-wrap', lang, setLang);
+  document.getElementById('lang-switch-btn').onclick = function() {
+    const next = lang === 'ka' ? 'en' : 'ka';
+    localStorage.setItem('lang', next);
+    let lobby = {};
+    try { lobby = JSON.parse(localStorage.getItem('great7-lobby')) || {}; } catch(e){}
+    lobby.lang = next;
+    localStorage.setItem('great7-lobby', JSON.stringify(lobby));
+    location.reload();
+  };
 }
 
 function showCreateRoomModal() {

@@ -79,8 +79,9 @@
     </style>
 </head>
 <body>
+<button id="lang-switch-btn" style="position:fixed;top:18px;right:300px;z-index:1000;padding:8px 14px;font-size:1.1em;background:#444;color:#fff;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:60px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">${getUILang()==='en'?'EN':'ქარ'}</button>
 <button id="lobby-btn" style="position:fixed;top:18px;right:24px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:148px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">${getUILang()==='en'?'Lobby':'ლობი'}</button>
-<button id="rules-btn" style="position:fixed;top:18px;right:140px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:148px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">${getUILang()==='en'?'Game Rules':'თამაშის წესები'}</button>
+<button id="rules-btn" style="position:fixed;top:18px;right:140px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:148px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">თამაშის წესები</button>
 <div class="container">
     <div class="board-wrap">
         <svg id="board" viewBox="0 0 700 700"></svg>
@@ -158,6 +159,15 @@ document.getElementById('rules-btn').onclick = function() {
     };
     modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
   }
+};
+document.getElementById('lang-switch-btn').onclick = function() {
+  const current = getUILang();
+  const next = current === 'ka' ? 'en' : 'ka';
+  let lobby = {};
+  try { lobby = JSON.parse(localStorage.getItem('great7-lobby')) || {}; } catch(e){}
+  lobby.lang = next;
+  localStorage.setItem('great7-lobby', JSON.stringify(lobby));
+  location.reload();
 };
 </script>
 </body>
