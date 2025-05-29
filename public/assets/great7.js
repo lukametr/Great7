@@ -491,6 +491,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         // Render
         let html = '';
+        html += `<div style="font-family:'Stardos Stencil',cursive;font-size:2.1em;letter-spacing:0.04em;color:#ffe7b3;text-shadow:0 2px 0 #000,0 0 12px #a97b3a88;font-weight:bold;margin-bottom:7px;text-align:left;">Great 7</div>`;
         if (totalCount < playerCount) {
             html += `<div style="font-size:0.98em;color:#ffe066;margin-bottom:7px;">ველოდებით მოთამაშეებს</div>`;
         }
