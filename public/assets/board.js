@@ -180,7 +180,8 @@ export function renderBoard({stonesState, holeState, selectedStoneId, allowedTar
         numText.setAttribute('x', x);
         numText.setAttribute('y', y + 5);
         numText.setAttribute('text-anchor', 'middle');
-        numText.setAttribute('font-size', '9.6');
+        const isMobile = window.innerWidth <= 700;
+        numText.setAttribute('font-size', isMobile ? '14.4' : '9.6');
         numText.setAttribute('fill', '#000');
         numText.setAttribute('font-weight', 'bold');
         numText.textContent = num;

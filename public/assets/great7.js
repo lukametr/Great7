@@ -410,9 +410,29 @@ window.addEventListener('DOMContentLoaded', () => {
         // პატარა ეკრანებზე დააკორექტირე padding და font-size
         function adjustPlayerListDivForMobile() {
             if (window.innerWidth <= 700) {
+                playerListDiv.style.position = 'fixed';
+                playerListDiv.style.bottom = '0';
+                playerListDiv.style.left = '0';
+                playerListDiv.style.right = '0';
+                playerListDiv.style.top = 'unset';
+                playerListDiv.style.width = '100vw';
+                playerListDiv.style.maxWidth = '100vw';
+                playerListDiv.style.borderRadius = '0';
+                playerListDiv.style.boxShadow = '0 -2px 8px #0004';
+                playerListDiv.style.zIndex = '1002';
                 playerListDiv.style.padding = '7px 10px';
                 playerListDiv.style.fontSize = '0.98em';
             } else {
+                playerListDiv.style.position = 'fixed';
+                playerListDiv.style.top = '18px';
+                playerListDiv.style.left = '18px';
+                playerListDiv.style.right = 'unset';
+                playerListDiv.style.bottom = 'unset';
+                playerListDiv.style.width = '';
+                playerListDiv.style.maxWidth = '90vw';
+                playerListDiv.style.borderRadius = '12px';
+                playerListDiv.style.boxShadow = '0 2px 8px #0004';
+                playerListDiv.style.zIndex = '1001';
                 playerListDiv.style.padding = '10px 18px';
                 playerListDiv.style.fontSize = '1.13em';
             }
@@ -439,6 +459,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     function renderPlayerList(currentTurnColor, timers) {
         ensurePlayerListDiv();
+        const isMobile = window.innerWidth <= 700;
         // Map color hex to color name
         const colorHexToName = {};
         for (const [name, hex] of Object.entries(board.STONE_COLORS)) colorHexToName[hex] = name;
@@ -476,7 +497,6 @@ window.addEventListener('DOMContentLoaded', () => {
                 const t = timers[userId];
                 let turnMs = isActive ? (t.inMainTime ? 0 : (t.turnTimeLeft||0)) : 30000;
                 let mainMs = t.mainTimeLeft||0;
-                // If active and in main time, show 0:00 for turn time
                 if (isActive && t.inMainTime) {
                     turnMs = 0;
                 }
@@ -491,19 +511,22 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         // Render
         let html = '';
-        html += `<div style="font-family:'Stardos Stencil',cursive;font-size:2.1em;letter-spacing:0.04em;color:#ffe7b3;text-shadow:0 2px 0 #000,0 0 12px #a97b3a88;font-weight:bold;margin-bottom:7px;text-align:left;">Great 7</div>`;
+        html += `<div style=\"font-family:'Stardos Stencil',cursive;font-size:2.1em;letter-spacing:0.04em;color:#ffe7b3;text-shadow:0 2px 0 #000,0 0 12px #a97b3a88;font-weight:bold;margin-bottom:7px;text-align:left;\">Great 7</div>`;
         if (totalCount < playerCount) {
-            html += `<div style="font-size:0.98em;color:#ffe066;margin-bottom:7px;">ველოდებით მოთამაშეებს</div>`;
+            html += `<div class='waiting-players-label' style=\"font-size:${isMobile ? '0.49em' : '0.98em'};color:#ffe066;margin-bottom:7px;\">ველოდებით მოთამაშეებს</div>`;
         }
-        html += playerInfos.filter(p => p.isJoined).map(p =>
-            `<div style="display:flex;align-items:center;margin-bottom:2px;font-size:0.98em;font-weight:normal;">
-                <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${p.colorHex};margin-right:8px;border:2px solid #fff;"></span>
-                <span style="color:${p.isActive ? '#ffe066' : (p.isJoined ? '#fff' : '#888')};text-shadow:${p.isActive ? '0 0 6px #ffe06699' : 'none'};">${p.playerName}</span>
-                <span style="margin-left:auto;font-size:0.93em;color:#ffe066;min-width:60px;text-align:right;">${p.turnTime}/${p.mainTime}</span>
+        let visiblePlayers = playerInfos;
+        if (isMobile) {
+            visiblePlayers = playerInfos.filter(p => p.isActive);
+        }
+        html += visiblePlayers.filter(p => p.isJoined).map(p =>
+            `<div style=\"display:flex;align-items:center;margin-bottom:2px;font-size:0.98em;font-weight:normal;\">
+                <span style=\"display:inline-block;width:16px;height:16px;border-radius:50%;background:${p.colorHex};margin-right:8px;border:2px solid #fff;\"></span>
+                <span style=\"color:${p.isActive ? '#ffe066' : (p.isJoined ? '#fff' : '#888')};text-shadow:${p.isActive ? '0 0 6px #ffe06699' : 'none'};\">${p.playerName}</span>
+                <span style=\"margin-left:auto;font-size:0.93em;color:#ffe066;min-width:60px;text-align:right;\">${p.turnTime}/${p.mainTime}</span>
             </div>`
         ).join('');
         playerListDiv.innerHTML = html;
-        // Remove local timerInterval logic
         if (window.timerInterval) clearInterval(window.timerInterval);
         window.timerInterval = null;
     }
@@ -598,6 +621,23 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         };
     }
+
+    // --- ლობი ღილაკის ზომის ადაპტაცია ---
+    function adaptLobbyBtnForMobile() {
+        const btn = document.getElementById('lobby-btn');
+        if (!btn) return;
+        if (window.innerWidth <= 700) {
+            btn.style.fontSize = '0.77em';
+            btn.style.padding = '5.6px 12.6px';
+            btn.style.borderRadius = '5.6px';
+        } else {
+            btn.style.fontSize = '';
+            btn.style.padding = '';
+            btn.style.borderRadius = '';
+        }
+    }
+    window.addEventListener('resize', adaptLobbyBtnForMobile);
+    adaptLobbyBtnForMobile();
 }); 
 
 function tryAutoAssignColor() {
