@@ -284,7 +284,6 @@ async function renderLobby(keepUser) {
     </div>
     <div class="lobby-rooms"></div>
     <div class="lobby-create">
-      <input class="form-input" id="room-name" placeholder="${t('roomName')}">
       <button class="lobby-create-btn" id="create-room-btn">${t('createRoom')}</button>
     </div>
     <div id="modal-bg" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000a;z-index:1000;justify-content:center;align-items:center;">
@@ -324,7 +323,7 @@ function showCreateRoomModal() {
     <form id="modal-create-room-form">
       <div class="form-group">
         <label class="form-label">${t('roomName')}</label>
-        <input class="form-input" type="text" name="roomName" required />
+        <input class="form-input" type="text" name="roomName" id="modal-room-name" maxlength="32" placeholder="${t('roomName')}" required />
       </div>
       <div class="form-group">
         <label class="form-label">${t('players')}</label>
@@ -340,14 +339,18 @@ function showCreateRoomModal() {
   document.getElementById('modal-create-room-form').onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const name = fd.get('roomName');
     const players = parseInt(fd.get('players'), 10);
+    const roomName = fd.get('roomName')?.trim() || '';
+    if (!roomName) {
+      document.getElementById('modal-room-name').focus();
+      return;
+    }
     const token = localStorage.getItem('token');
     // ოთახის შექმნა API-ში
     const res = await fetch('/api/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
-      body: JSON.stringify({ name, players })
+      body: JSON.stringify({ players, name: roomName })
     });
     if (res.ok) {
       const room = await res.json();
