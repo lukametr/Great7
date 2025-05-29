@@ -270,6 +270,7 @@ async function renderLobby(keepUser) {
   el.innerHTML = `
     <div class="lobby-header" role="navigation">
       <span class="lobby-user">${user.name} (${user.email})</span>
+      <button class="main-btn" id="rules-btn" aria-label="თამაშის წესები" tabindex="0">${lang==='en'?'Game Rules':'თამაშის წესები'}</button>
       <button class="main-btn" id="profile-btn" aria-label="პროფილი" tabindex="0">${t('profile')}</button>
       <button class="main-btn" id="logout-btn" aria-label="გამოსვლა" tabindex="0">${t('logout')}</button>
     </div>
@@ -291,6 +292,69 @@ async function renderLobby(keepUser) {
     </div>
     <span style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">ნავიგაცია: პროფილი და გამოსვლის ღილაკები ხელმისაწვდომია კლავიატურით და ეკრანის მკითხველით</span>
   `;
+  document.getElementById('rules-btn').onclick = function() {
+    let modal = document.getElementById('rules-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'rules-modal';
+      modal.style.position = 'fixed';
+      modal.style.top = '0';
+      modal.style.left = '0';
+      modal.style.width = '100vw';
+      modal.style.height = '100vh';
+      modal.style.background = 'rgba(0,0,0,0.32)';
+      modal.style.display = 'flex';
+      modal.style.alignItems = 'center';
+      modal.style.justifyContent = 'center';
+      modal.style.zIndex = '3000';
+      const lang = (JSON.parse(localStorage.getItem('great7-lobby'))?.lang)||'ka';
+      modal.innerHTML = `
+        <div style=\"background:#fff;color:#222;padding:32px 28px 24px 28px;border-radius:16px;box-shadow:0 2px 24px #0008;min-width:260px;max-width:90vw;text-align:left;max-height:90vh;overflow-y:auto;\">
+          <div style=\"font-size:1.3em;font-weight:bold;margin-bottom:12px;text-align:center;\">თამაშის წესები</div>
+          <div id=\"rules-ka\" style=\"font-size:1.05em;line-height:1.6;display:${lang==='ka'?'':'none'};\">
+            <b>Great 7 </b> არის 2-6 მოთამაშეზე გათვლილი სტრატეგიული თამაში. <br><br>
+            <b>მიზანი:</b>თამაშის მოსაგებად გადაიყვანე შენი ყველა ქვა საპირისპირო კუთხეში მდებარე რგოლში.<br><br>
+            <b>სვლები:</b> თითოეულ სვლაზე შეგიძლია გადაადგილო ერთი ქვა მეზობელ ცარიელ ბუდეში ან გადახტე სხვა ქვაზე (ან რიგ-რიგობით რამდენიმე გადახტომა).<br><br>
+            <b>გადახტომა:</b> ქვა შეიძლება გადახტეს მეზობელ ქვაზე და დაეშვას მის იქით არსებულ ცარიელ ბუდეში. შესაძლებელია რამდენიმე გადაბმული გადახტომა.<br><br>
+            <b>სვლების დასრულება:</b> თუ შეგიძლია გადახტომა, შეგიძლია გააგრძელო ან დაასრულო სვლა ნებისმიერ დროს.<br><br>
+            <b>დრო:</b> თითოეულ მოთამაშეს აქვს შეზღუდული დრო სვლისთვის.<br><br>
+            <b>მოგება:</b> ვინც პირველი გადაიყვანს ყველა თავის ქვას მიზნის ზონაში, ის იგებს.<br><br>
+          </div>
+          <div id=\"rules-en\" style=\"font-size:1.05em;line-height:1.6;display:${lang==='en'?'':'none'};\">
+            <b>Overview of \"Great 7\" Board Game</b><br><br>
+            <b>Game Concept</b><br>
+            \"Great 7\" is a unique, high-strategy board game designed for 2–6 players.<br><br>
+            <b>Objective</b><br>
+            The first player to transfer all seven of their stones into the opponent's starting \"ring\" (goal zone) wins the game.<br><br>
+            <b>Setup</b><br>
+            The board is an NxN grid laid out as a strategic labyrinth.<br>
+            Each player places their seven stones on designated starting positions.<br><br>
+            <b>Types of Moves</b><br>
+            <u>Adjacent Move</u><br>
+            Move one stone into an adjacent empty square.<br><br>
+            <u>Jump Move</u><br>
+            A stone may jump over another stone in a chosen direction.<br>
+            If the stone to be jumped is K squares away, the jumping stone lands K+1 squares beyond it (leveraging advanced corporate-level strategy).<br>
+            Multiple consecutive jumps are allowed in a single turn, at the player's discretion.<br><br>
+            <b>Ending a Turn</b><br>
+            A turn may be ended at any time after at least one adjacent move or jump has been executed.<br><br>
+            <b>Time Constraint</b><br>
+            Each player has a time limit per move (Move Timer) to maintain game flow and uphold optimal strategic planning.<br><br>
+            <b>Winning the Game</b><br>
+            The first player to transfer all seven stones into the opponent's ring zone is declared the winner.<br>
+          </div>
+          <div style=\"text-align:center;margin-top:18px;\">
+            <button id=\"close-rules-modal\" style=\"background:#e74c3c;color:#fff;padding:8px 22px;font-size:1.1em;border:none;border-radius:7px;cursor:pointer;\">დახურვა</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      document.getElementById('close-rules-modal').onclick = function() {
+        modal.remove();
+      };
+      modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+    }
+  };
   document.getElementById('profile-btn').onclick = () => {
     window.location.href = '/profile.html';
   };
