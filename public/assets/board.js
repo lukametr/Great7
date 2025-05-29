@@ -2,9 +2,40 @@
 
 // პარამეტრები
 export const ROWS = [2,3,4,11,12,11,10,9,10,11,12,11,4,3,2];
-export const BOARD_CENTER = {x: 350, y: 350};
-export const HOLE_RADIUS = 11; // ბუდეების და ქვების რადიუსი
-export const HOLE_DIST = 13 * 2.7 - 1; // ბუდეებს შორის მანძილი
+export const SCALE_FACTOR = 1.44;
+
+// დროებითი გამოთვლა ROWS, HOLE_DIST, ROW_HEIGHT-ისთვის
+const TEMP_ROWS = [2,3,4,11,12,11,10,9,10,11,12,11,4,3,2];
+const TEMP_HOLE_DIST = (13 * 2.7 - 1) * SCALE_FACTOR;
+const TEMP_ROW_HEIGHT = TEMP_HOLE_DIST * 0.92;
+
+// ჯერ დროებით ცენტრი SVG-ის ცენტრში
+const TEMP_SVG_CENTER = 1008 / 2;
+let tempHoleCoords = {};
+let tempHoleNum = 1;
+const tempStartY = TEMP_SVG_CENTER - (TEMP_ROWS.length-1)/2 * TEMP_ROW_HEIGHT;
+TEMP_ROWS.forEach((count, rowIdx) => {
+    const rowY = tempStartY + rowIdx * TEMP_ROW_HEIGHT;
+    const rowWidth = (count-1) * TEMP_HOLE_DIST;
+    const startX = TEMP_SVG_CENTER - rowWidth/2;
+    for(let colIdx=0; colIdx<count; colIdx++) {
+        const x = startX + colIdx * TEMP_HOLE_DIST;
+        const y = rowY;
+        tempHoleCoords[tempHoleNum] = {x, y};
+        tempHoleNum++;
+    }
+});
+// 58-ე ბუდის კოორდინატები
+const center58 = tempHoleCoords[58];
+// SVG-ის ცენტრი
+const SVG_CENTER = 1008 / 2;
+// BOARD_CENTER ისე, რომ 58-ე ბუდე მოხვდეს SVG-ის ცენტრში
+export const BOARD_CENTER = {
+    x: (350 * SCALE_FACTOR) + (SVG_CENTER - center58.x) - (1008 * 0.15),
+    y: (350 * SCALE_FACTOR) + (SVG_CENTER - center58.y) - (1008 * 0.15)
+};
+export const HOLE_RADIUS = 11 * SCALE_FACTOR; // ბუდეების და ქვების რადიუსი
+export const HOLE_DIST = (13 * 2.7 - 1) * SCALE_FACTOR; // ბუდეებს შორის მანძილი
 export const ROW_HEIGHT = HOLE_DIST * 0.92; // ვერტიკალური დაშორება
 
 // ბუდეების კოორდინატების გენერაცია
