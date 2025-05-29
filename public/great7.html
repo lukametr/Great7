@@ -79,8 +79,8 @@
     </style>
 </head>
 <body>
-<button id="lobby-btn" style="position:fixed;top:18px;right:24px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:148px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">ლობი</button>
-<button id="rules-btn" style="position:fixed;top:18px;right:140px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:148px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">თამაშის წესები</button>
+<button id="lobby-btn" style="position:fixed;top:18px;right:24px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:148px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">${getUILang()==='en'?'Lobby':'ლობი'}</button>
+<button id="rules-btn" style="position:fixed;top:18px;right:140px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;min-width:148px;height:44px;line-height:44px;display:flex;align-items:center;justify-content:center;">${getUILang()==='en'?'Game Rules':'თამაშის წესები'}</button>
 <div class="container">
     <div class="board-wrap">
         <svg id="board" viewBox="0 0 700 700"></svg>
@@ -114,16 +114,15 @@ document.getElementById('rules-btn').onclick = function() {
     const lang = getUILang();
     modal.innerHTML = `
       <div style=\"background:#fff;color:#222;padding:32px 28px 24px 28px;border-radius:16px;box-shadow:0 2px 24px #0008;min-width:260px;max-width:90vw;text-align:left;max-height:90vh;overflow-y:auto;\">
-        <div style=\"font-size:1.3em;font-weight:bold;margin-bottom:12px;text-align:center;\">თამაშის წესები</div>
+        <div style=\"font-size:1.3em;font-weight:bold;margin-bottom:12px;text-align:center;\">${lang==='en'?'Game Rules':'თამაშის წესები'}</div>
         <div id=\"rules-ka\" style=\"font-size:1.05em;line-height:1.6;display:${lang==='ka'?'':'none'};\">
-          <b>Great 7 (ჩინური ჭადრაკი)</b> არის 2-6 მოთამაშეზე გათვლილი სტრატეგიული თამაში. <br><br>
-          <b>მიზანი:</b> პირველმა გადაიყვანე შენი ყველა ქვა საპირისპირო კუთხეში.<br><br>
+          <b>Great 7 </b> არის 2-6 მოთამაშეზე გათვლილი სტრატეგიული თამაში. <br><br>
+          <b>მიზანი:</b>თამაშის მოსაგებად გადაიყვანე შენი ყველა ქვა საპირისპირო კუთხეში მდებარე რგოლში.<br><br>
           <b>სვლები:</b> თითოეულ სვლაზე შეგიძლია გადაადგილო ერთი ქვა მეზობელ ცარიელ ბუდეში ან გადახტე სხვა ქვაზე (ან რიგ-რიგობით რამდენიმე გადახტომა).<br><br>
           <b>გადახტომა:</b> ქვა შეიძლება გადახტეს მეზობელ ქვაზე და დაეშვას მის იქით არსებულ ცარიელ ბუდეში. შესაძლებელია რამდენიმე გადაბმული გადახტომა.<br><br>
           <b>სვლების დასრულება:</b> თუ შეგიძლია გადახტომა, შეგიძლია გააგრძელო ან დაასრულო სვლა ნებისმიერ დროს.<br><br>
           <b>დრო:</b> თითოეულ მოთამაშეს აქვს შეზღუდული დრო სვლისთვის.<br><br>
           <b>მოგება:</b> ვინც პირველი გადაიყვანს ყველა თავის ქვას მიზნის ზონაში, ის იგებს.<br><br>
-          <b>დამატებითი წესები:</b> თამაშის მიმდინარეობისას ქვების დაბრუნება საწყის პოზიციაზე არ შეიძლება.<br>
         </div>
         <div id=\"rules-en\" style=\"font-size:1.05em;line-height:1.6;display:${lang==='en'?'':'none'};\">
           <b>Overview of \"Great 7\" Board Game</b><br><br>
@@ -149,7 +148,7 @@ document.getElementById('rules-btn').onclick = function() {
           The first player to transfer all seven stones into the opponent's ring zone is declared the winner.<br>
         </div>
         <div style=\"text-align:center;margin-top:18px;\">
-          <button id=\"close-rules-modal\" style=\"background:#e74c3c;color:#fff;padding:8px 22px;font-size:1.1em;border:none;border-radius:7px;cursor:pointer;\">დახურვა</button>
+          <button id=\"close-rules-modal\" style=\"background:#e74c3c;color:#fff;padding:8px 22px;font-size:1.1em;border:none;border-radius:7px;cursor:pointer;\">${lang==='en'?'Close':'დახურვა'}</button>
         </div>
       </div>
     `;
