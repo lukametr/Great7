@@ -23,6 +23,8 @@ let visitedJumpPositions = new Set();
 let colorNames = {};
 
 let svg = null;
+let timerDiv = null;
+let timerInterval = null;
 
 window.addEventListener('DOMContentLoaded', () => {
     // SVG ელემენტის რეგისტრაცია
@@ -92,8 +94,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // WebSocket ინიციალიზაცია (თუ ოთახის id არსებობს)
     if (roomId) {
+        // --- Use stored userId if available ---
+        let storedUserId = getStoredUserId();
+        let wsUrl = `/ws?room=${roomId}`;
+        if (storedUserId) wsUrl += `&userId=${encodeURIComponent(storedUserId)}`;
         ws = network.initWebSocket(
-            roomId,
+            wsUrl,
             (msg) => {
                 let data;
                 try { data = JSON.parse(msg.data); } catch (e) { return; }
@@ -106,20 +112,8 @@ window.addEventListener('DOMContentLoaded', () => {
                         console.warn('[NAME SYNC] No names in color-update!');
                     }
                     console.log('[NAME SYNC] Updated colorNames:', colorNames);
-                    const myUserId = ws._userId || (ws && ws._userId);
-                    if (myUserId && colorPlayers[myUserId]) {
-                        let foundColor = null;
-                        for (const [name, hex] of Object.entries(board.STONE_COLORS)) {
-                            if (hex === colorPlayers[myUserId]) {
-                                foundColor = name;
-                                break;
-                            }
-                        }
-                        if (foundColor) {
-                            myColor = foundColor;
-                        }
-                    }
-                    renderPlayerList(currentTurnColor);
+                    updateMyColorFromPlayers();
+                    renderPlayerList(currentTurnColor, window.lastTimers);
                 }
                 if (data.type === 'color-error') {
                     // ფერი დაკავებულია, სცადე სხვა თავისუფალი ფერი
@@ -128,6 +122,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
                 if (data.type === 'whose-turn') {
                     currentTurnColor = data.color;
+                    updateMyColorFromPlayers();
                     // გამოაჩინე ვისი სვლაა UI-ში
                     const turnDiv = document.getElementById('turn-indicator') || (() => {
                         const d = document.createElement('div');
@@ -150,7 +145,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         red: 'წითელი', green: 'მწვანე', blue: 'ცისფერი', navy: 'ბადრიჯნისფერი', orange: 'ფორთოხლისფერი', yellow: 'ყვითელი'
                     };
                     turnDiv.textContent = `თამაშობს "${colorGeo[colorName]||colorName}"`;
-                    renderPlayerList(currentTurnColor);
+                    renderPlayerList(currentTurnColor, window.lastTimers);
                 }
                 // --- სინქრონიზაცია: მიიღე სვლა სხვა მოთამაშისგან ან საწყისი მდგომარეობა ---
                 if ((data.type === 'move' || data.type === 'sync') && data.state) {
@@ -169,11 +164,18 @@ window.addEventListener('DOMContentLoaded', () => {
                     selectedStoneId = null;
                     allowedTargets = [];
                     jumpTargets = [];
+                    window.MOVE_DONE = false;
+                    updateMyColorFromPlayers();
                     render();
-                    renderPlayerList(currentTurnColor);
+                    renderPlayerList(currentTurnColor, window.lastTimers);
+                    // If after sync, my userId is not in colorPlayers, send join again
+                    if (ws && ws._userId && (!colorPlayers[ws._userId] || !colorNames[ws._userId])) {
+                        network.sendWSMessage({ type: 'join', name: getCurrentUserName() });
+                    }
                 }
                 if (data.type === 'user-id' && data.userId) {
                     ws._userId = data.userId;
+                    setStoredUserId(data.userId);
                     console.log('RECEIVED USER ID:', data.userId);
                     network.sendWSMessage({ type: 'join', name: getCurrentUserName() });
                     return;
@@ -186,23 +188,69 @@ window.addEventListener('DOMContentLoaded', () => {
                     // Prevent further moves
                     window.GAME_OVER = true;
                 }
+                if (data.type === 'timer-update') {
+                    window.lastTimers = data.timers;
+                    renderPlayerList(currentTurnColor, data.timers);
+                }
+                if (data.type === 'timer-forfeit') {
+                    // Show message that player lost on time only if both timers are out
+                    const forfeiter = colorNames[data.userId] || 'მოთამაშე';
+                    // Find the timer for this user
+                    if (data.userId && window.lastTimers && window.lastTimers[data.userId]) {
+                        const t = window.lastTimers[data.userId];
+                        if (t.mainTimeLeft <= 0) {
+                            alert(forfeiter + ' დროის ამოწურვით დამარცხდა!');
+                        }
+                    } else {
+                        alert(forfeiter + ' დროის ამოწურვით დამარცხდა!');
+                    }
+                }
+                if (data.type === 'game-over') {
+                    if (timerDiv) timerDiv.innerHTML = '';
+                }
+                if (data.type === 'profile-update') {
+                    // Fetch latest stats from /api/me and show in a modal or alert
+                    const token = localStorage.getItem('token');
+                    if (token) {
+                        fetch('/api/me', { headers: { 'Authorization': 'Bearer ' + token } })
+                            .then(r => r.ok ? r.json() : null)
+                            .then(user => {
+                                if (user) {
+                                    // Show stats in a modal or alert
+                                    alert(`სტატისტიკა განახლდა!\nმოგება: ${user.wins}\nწაგება: ${user.losses}\nთამაშები: ${user.gamesPlayed}\nLevel: ${user.level} (XP: ${user.xp})`);
+                                    // If in lobby, update stats visually
+                                    if (window.renderLobby) window.renderLobby(true);
+                                }
+                            });
+                    }
+                }
             }
         );
     }
 
     // ქვებზე click-to-move ლოგიკა
-    svg.addEventListener('click', e => {
+    function handleStoneSelect(e) {
         if (window.GAME_OVER) return;
         if (window.MOVE_DONE) return;
         if (Object.keys(colorPlayers).length < playerCount) return;
         if (!myColor || !currentTurnColor || board.STONE_COLORS[myColor] !== currentTurnColor) return;
-        const target = e.target.closest('circle[data-stone-id]');
+        let target = e.target.closest('circle[data-stone-id]');
+        if (!target && e.touches && e.touches.length === 1) {
+            // Touch: find element at touch point
+            const touch = e.touches[0];
+            const el = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (el && el.hasAttribute('data-stone-id')) target = el;
+        }
         if (target) {
             const stoneId = target.getAttribute('data-stone-id');
             const stone = board.stonesState.find(s => s.id === stoneId);
             if (!stone) return;
             // მხოლოდ ჩემი ფერის ქვაზე
             if (myColor && stone.color === board.STONE_COLORS[myColor]) {
+                // Always clear jump history when selecting a new stone
+                if (selectedStoneId !== stoneId) {
+                    visitedJumpPositions.clear();
+                }
                 if (selectedStoneId === stoneId) {
                     selectedStoneId = null;
                     allowedTargets = [];
@@ -216,14 +264,24 @@ window.addEventListener('DOMContentLoaded', () => {
                 render();
             }
         }
-    });
+    }
+    svg.addEventListener('click', handleStoneSelect);
+    svg.addEventListener('touchstart', handleStoneSelect);
 
     // --- Handle click-to-move events from board.js ---
-    svg.addEventListener('board-hole-click', e => {
+    function handleHoleClick(e) {
         if (window.GAME_OVER) return;
         if (window.MOVE_DONE) return;
         if (!selectedStoneId) return;
-        const targetNum = e.detail.targetNum;
+        let targetNum = e.detail ? e.detail.targetNum : null;
+        if (!targetNum && e.touches && e.touches.length === 1) {
+            const touch = e.touches[0];
+            const el = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (el && el.classList.contains('board-hole')) {
+                targetNum = parseInt(el.getAttribute('data-hole-num'), 10);
+            }
+        }
+        if (!targetNum) return;
         const stone = board.stonesState.find(s => s.id === selectedStoneId);
         if (!stone) return;
         // Check if move is allowed
@@ -236,19 +294,26 @@ window.addEventListener('DOMContentLoaded', () => {
         } else if (!allowed.includes(targetNum)) {
             return; // Not a legal move
         }
+        // --- EXTRA SAFETY: Always clear previous position ---
+        if (board.holeState[stone.pos] === stone.id) {
+            board.holeState[stone.pos] = null;
+        }
         // Do the move
         if (moveType === 'jump') {
             visitedJumpPositions.add(stone.pos);
         } else {
             visitedJumpPositions.clear();
         }
-        board.holeState[stone.pos] = null;
         stone.pos = targetNum;
         board.holeState[targetNum] = stone.id;
         // Check for further jumps
         if (moveType === 'jump') {
             const moreJumps = gameLogic.getJumpTargetsFromDiagonals(stone, DIAGONALS, board.holeState, visitedJumpPositions);
             canJumpAgain = moreJumps.length > 0;
+            // If no more jumps, clear visitedJumpPositions
+            if (!canJumpAgain) {
+                visitedJumpPositions.clear();
+            }
         } else {
             visitedJumpPositions.clear();
         }
@@ -266,36 +331,54 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         // After move, prevent further moves until next turn
         window.MOVE_DONE = true;
-        finishTurnBtn.disabled = false;
-        finishTurnBtn.style.opacity = '1';
-        finishTurnBtn.style.cursor = 'pointer';
-        finishTurnBtn.style.display = 'block';
+        // Show Finish Turn button ONLY if it's my turn AND I can jump again (multi-jump opportunity)
+        if (
+            myColor &&
+            currentTurnColor &&
+            board.STONE_COLORS[myColor] === currentTurnColor &&
+            !window.GAME_OVER &&
+            moveType === 'jump' &&
+            canJumpAgain
+        ) {
+            finishTurnBtn.disabled = false;
+            finishTurnBtn.style.opacity = '1';
+            finishTurnBtn.style.cursor = 'pointer';
+            finishTurnBtn.style.display = 'block';
+        } else {
+            finishTurnBtn.disabled = true;
+            finishTurnBtn.style.opacity = '0.45';
+            finishTurnBtn.style.cursor = 'not-allowed';
+            finishTurnBtn.style.display = 'none';
+        }
         // Deselect after move
         selectedStoneId = null;
         allowedTargets = [];
         jumpTargets = [];
         render();
-    });
+    }
+    svg.addEventListener('board-hole-click', handleHoleClick);
+    svg.addEventListener('touchend', handleHoleClick);
 
     function ensureFinishTurnBtn() {
         if (!finishTurnBtn) {
             finishTurnBtn = document.createElement('button');
             finishTurnBtn.textContent = 'სვლის დასრულება';
-            finishTurnBtn.style.position = 'absolute';
-            finishTurnBtn.style.bottom = '30px';
-            finishTurnBtn.style.right = '60px';
-            finishTurnBtn.style.padding = '10px 22px';
-            finishTurnBtn.style.fontSize = '1.1em';
+            finishTurnBtn.style.position = 'fixed';
+            finishTurnBtn.style.left = '50%';
+            finishTurnBtn.style.bottom = '18px';
+            finishTurnBtn.style.transform = 'translateX(-50%)';
+            finishTurnBtn.style.padding = '14px 32px';
+            finishTurnBtn.style.fontSize = '1.25em';
             finishTurnBtn.style.background = '#23272f';
             finishTurnBtn.style.color = '#fff';
             finishTurnBtn.style.border = 'none';
-            finishTurnBtn.style.borderRadius = '8px';
+            finishTurnBtn.style.borderRadius = '12px';
             finishTurnBtn.style.boxShadow = '0 2px 8px #0002';
             finishTurnBtn.style.cursor = 'pointer';
             finishTurnBtn.style.zIndex = '1002';
             finishTurnBtn.style.display = 'none';
-            document.body.appendChild(finishTurnBtn);
         }
+        document.body.appendChild(finishTurnBtn);
     }
     ensureFinishTurnBtn();
 
@@ -306,19 +389,37 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!playerListDiv) {
             playerListDiv = document.createElement('div');
             playerListDiv.id = 'player-list-indicator';
-            playerListDiv.style.position = 'absolute';
-            playerListDiv.style.top = '60px';
-            playerListDiv.style.left = '10px';
+            playerListDiv.style.position = 'fixed';
+            playerListDiv.style.top = '18px';
+            playerListDiv.style.left = '18px';
+            playerListDiv.style.right = 'unset';
+            playerListDiv.style.bottom = 'unset';
+            playerListDiv.style.transform = 'none';
             playerListDiv.style.background = 'rgba(30,30,30,0.92)';
-            playerListDiv.style.padding = '10px 18px 10px 18px';
-            playerListDiv.style.borderRadius = '10px';
+            playerListDiv.style.padding = '10px 18px';
+            playerListDiv.style.borderRadius = '12px';
             playerListDiv.style.boxShadow = '0 2px 8px #0004';
             playerListDiv.style.fontSize = '1.13em';
             playerListDiv.style.color = '#fff';
             playerListDiv.style.zIndex = '1001';
             playerListDiv.style.minWidth = '180px';
-            document.body.appendChild(playerListDiv);
+            playerListDiv.style.maxWidth = '90vw';
+            playerListDiv.style.maxHeight = 'calc(100vh - 36px)';
+            playerListDiv.style.overflowY = 'auto';
         }
+        // პატარა ეკრანებზე დააკორექტირე padding და font-size
+        function adjustPlayerListDivForMobile() {
+            if (window.innerWidth <= 700) {
+                playerListDiv.style.padding = '7px 10px';
+                playerListDiv.style.fontSize = '0.98em';
+            } else {
+                playerListDiv.style.padding = '10px 18px';
+                playerListDiv.style.fontSize = '1.13em';
+            }
+        }
+        adjustPlayerListDivForMobile();
+        window.addEventListener('resize', adjustPlayerListDivForMobile);
+        document.body.appendChild(playerListDiv);
     }
     function getCurrentUserName() {
         // Try to get name from JWT token
@@ -336,7 +437,7 @@ window.addEventListener('DOMContentLoaded', () => {
         } catch (e) {}
         return '';
     }
-    function renderPlayerList(currentTurnColor) {
+    function renderPlayerList(currentTurnColor, timers) {
         ensurePlayerListDiv();
         // Map color hex to color name
         const colorHexToName = {};
@@ -358,32 +459,56 @@ window.addEventListener('DOMContentLoaded', () => {
             const colorName = colorHexToName[colorHex] || '';
             // Use colorNames mapping from server
             let playerName = '';
-            for (const [userId, cHex] of Object.entries(colorPlayers)) {
-                if (cHex === colorHex && colorNames[userId]) {
-                    playerName = colorNames[userId];
+            let userId = null;
+            for (const [uid, cHex] of Object.entries(colorPlayers)) {
+                if (cHex === colorHex) {
+                    playerName = colorNames[uid] || uid || 'Player';
+                    userId = uid;
                     break;
                 }
             }
             const isJoined = joinedColors.includes(colorHex);
             const isActive = (currentTurnColor && colorHex === currentTurnColor);
-            playerInfos.push({ colorHex, colorName, playerName, isJoined, isActive });
+            // Timers
+            let turnTime = '0:30';
+            let mainTime = '1:00';
+            if (timers && userId && timers[userId]) {
+                const t = timers[userId];
+                let turnMs = isActive ? (t.inMainTime ? 0 : (t.turnTimeLeft||0)) : 30000;
+                let mainMs = t.mainTimeLeft||0;
+                // If active and in main time, show 0:00 for turn time
+                if (isActive && t.inMainTime) {
+                    turnMs = 0;
+                }
+                let turnMin = Math.floor(turnMs/60000);
+                let turnSec = Math.floor((turnMs%60000)/1000);
+                let mainMin = Math.floor(mainMs/60000);
+                let mainSec = Math.floor((mainMs%60000)/1000);
+                turnTime = `${turnMin}:${turnSec.toString().padStart(2,'0')}`;
+                mainTime = `${mainMin}:${mainSec.toString().padStart(2,'0')}`;
+            }
+            playerInfos.push({ colorHex, colorName, playerName, isJoined, isActive, turnTime, mainTime });
         }
         // Render
         let html = '';
         if (totalCount < playerCount) {
-            html += `<div style="font-size:1.08em;color:#ffe066;margin-bottom:7px;">ველოდებით მოთამაშეებს</div>`;
+            html += `<div style="font-size:0.98em;color:#ffe066;margin-bottom:7px;">ველოდებით მოთამაშეებს</div>`;
         }
         html += playerInfos.filter(p => p.isJoined).map(p =>
-            `<div style="display:flex;align-items:center;margin-bottom:2px;">
+            `<div style="display:flex;align-items:center;margin-bottom:2px;font-size:0.98em;font-weight:normal;">
                 <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${p.colorHex};margin-right:8px;border:2px solid #fff;"></span>
-                <span style="font-weight:${p.isActive ? 'bold' : 'normal'};color:${p.isActive ? '#ffe066' : (p.isJoined ? '#fff' : '#888')};text-shadow:${p.isActive ? '0 0 6px #ffe06699' : 'none'};\">${p.playerName}</span>
+                <span style="color:${p.isActive ? '#ffe066' : (p.isJoined ? '#fff' : '#888')};text-shadow:${p.isActive ? '0 0 6px #ffe06699' : 'none'};">${p.playerName}</span>
+                <span style="margin-left:auto;font-size:0.93em;color:#ffe066;min-width:60px;text-align:right;">${p.turnTime}/${p.mainTime}</span>
             </div>`
         ).join('');
         playerListDiv.innerHTML = html;
+        // Remove local timerInterval logic
+        if (window.timerInterval) clearInterval(window.timerInterval);
+        window.timerInterval = null;
     }
 
     // On initial load, show player list
-    renderPlayerList(currentTurnColor);
+    renderPlayerList(currentTurnColor, window.lastTimers);
 
     // Remove winner message and confetti if present
     const msgDiv = document.getElementById('winner-message');
@@ -409,25 +534,69 @@ window.addEventListener('DOMContentLoaded', () => {
     // On new turn, reset MOVE_DONE
     function onNewTurn() {
         window.MOVE_DONE = false;
+        // On new turn, hide Finish Turn button for everyone
         finishTurnBtn.disabled = true;
         finishTurnBtn.style.opacity = '0.45';
         finishTurnBtn.style.cursor = 'not-allowed';
-        finishTurnBtn.style.display = 'block';
+        finishTurnBtn.style.display = 'none';
+        visitedJumpPositions.clear(); // Always clear on new turn
     }
 
     // Listen for whose-turn
-    network.initWebSocket = ((orig) => function(...args) {
+    window.initWebSocket = ((orig) => function(...args) {
         const cb = args[1];
         args[1] = function(msg) {
             let data;
             try { data = JSON.parse(msg.data); } catch (e) { return; }
             if (data.type === 'whose-turn') {
                 onNewTurn();
+                visitedJumpPositions.clear(); // Extra safety: clear jump history on new turn
             }
             return cb(msg);
         };
         return orig.apply(this, args);
-    })(network.initWebSocket);
+    })(window.initWebSocket);
+
+    // --- ლობი ღილაკის click-ზე დაუყოვნებლივ განაახლე ლობი ---
+    const lobbyBtn = document.getElementById('lobby-btn');
+    if (lobbyBtn) {
+        lobbyBtn.onclick = function() {
+            // აჩვენე გასვლის popup
+            let popup = document.getElementById('exit-popup');
+            if (!popup) {
+                popup = document.createElement('div');
+                popup.id = 'exit-popup';
+                popup.style.position = 'fixed';
+                popup.style.top = '0';
+                popup.style.left = '0';
+                popup.style.width = '100vw';
+                popup.style.height = '100vh';
+                popup.style.background = 'rgba(0,0,0,0.32)';
+                popup.style.display = 'flex';
+                popup.style.alignItems = 'center';
+                popup.style.justifyContent = 'center';
+                popup.style.zIndex = '2000';
+                popup.innerHTML = `
+                  <div style="background:#fff;color:#222;padding:32px 28px 24px 28px;border-radius:16px;box-shadow:0 2px 24px #0008;min-width:260px;text-align:center;max-width:90vw;">
+                    <div style="font-size:1.2em;margin-bottom:18px;">ნამდვილად გსურთ თამაშიდან გასვლა?</div>
+                    <div style="display:flex;gap:18px;justify-content:center;">
+                      <button id="exit-yes" style="background:#e74c3c;color:#fff;padding:8px 22px;font-size:1.1em;border:none;border-radius:7px;cursor:pointer;">დიახ</button>
+                      <button id="exit-no" style="background:#bbb;color:#222;padding:8px 22px;font-size:1.1em;border:none;border-radius:7px;cursor:pointer;">არა</button>
+                    </div>
+                  </div>
+                `;
+                document.body.appendChild(popup);
+                document.getElementById('exit-yes').onclick = function() {
+                    // დაუყოვნებლივ განაახლე ლობი
+                    if (window.renderLobby) window.renderLobby();
+                    window.location.href = 'index.html';
+                };
+                document.getElementById('exit-no').onclick = function() {
+                    popup.remove();
+                };
+            }
+        };
+    }
 }); 
 
 function tryAutoAssignColor() {
@@ -566,4 +735,29 @@ function showConfetti() {
         running = false;
         canvas.remove();
     }, 4200);
+}
+
+function getStoredUserId() {
+    try {
+        return localStorage.getItem('great7-userId') || null;
+    } catch (e) { return null; }
+}
+function setStoredUserId(id) {
+    try { localStorage.setItem('great7-userId', id); } catch (e) {}
+}
+
+function updateMyColorFromPlayers() {
+    const myUserId = ws && ws._userId;
+    if (myUserId && colorPlayers[myUserId]) {
+        for (const [name, hex] of Object.entries(board.STONE_COLORS)) {
+            if (hex === colorPlayers[myUserId]) {
+                myColor = name;
+                console.log('[COLOR SYNC] myUserId:', myUserId, 'color:', myColor, 'colorPlayers:', colorPlayers);
+                return;
+            }
+        }
+    } else {
+        myColor = null;
+        console.log('[COLOR SYNC] myUserId not found in colorPlayers, myColor set to null', myUserId, colorPlayers);
+    }
 } 

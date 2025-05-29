@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8">
+  <title>ჩემი კაბინეტი | Great7</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="assets/lobby.css">
+  <style>
+    .profile-container { max-width: 420px; margin: 60px auto; background: #23272f; border-radius: 16px; box-shadow: 0 2px 16px #0008; padding: 32px 28px; color: #fff; }
+    .profile-title { font-size: 2em; font-weight: bold; margin-bottom: 18px; text-align: center; }
+    .profile-row { display: flex; justify-content: space-between; margin: 12px 0; font-size: 1.13em; }
+    .profile-label { color: #ffe066; }
+    .profile-value { font-weight: bold; }
+    .profile-level { font-size: 1.5em; color: #4caf50; text-align: center; margin: 18px 0 8px 0; }
+    .profile-btn { display: block; margin: 32px auto 0 auto; padding: 10px 28px; font-size: 1.1em; background: #23272f; color: #fff; border: none; border-radius: 8px; box-shadow: 0 2px 8px #0002; cursor: pointer; }
+    .profile-spinner { display: block; margin: 60px auto; border: 6px solid #eee; border-top: 6px solid #4caf50; border-radius: 50%; width: 48px; height: 48px; animation: spin 1s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body style="background:#181a20;">
+  <div class="main-container">
+    <div id="lang-switch-wrap" style="display:flex;justify-content:flex-end;margin-bottom:12px;"></div>
+    <div id="profile-root">
+      <div class="profile-spinner"></div>
+    </div>
+  </div>
+  <script src="/assets/lobby.js"></script>
+  <script>
+    if (!window.lang) window.lang = localStorage.getItem('lang') || 'ka';
+    // Override t() to always use window.lang for correct i18n switching
+    window.t = function(key) { return i18n[window.lang][key] || key; }
+  </script>
+  <script>
+    async function fetchProfile() {
+      const token = localStorage.getItem('token');
+      if (!token) { window.location.href = '/'; return; }
+      const res = await fetch('/api/profile', { headers: { 'Authorization': 'Bearer '+token } });
+      if (!res.ok) { window.location.href = '/'; return; }
+      const data = await res.json();
+      return data;
+    }
+    function renderProfile(profile) {
+      window._lastProfile = profile;
+      document.getElementById('profile-root').innerHTML = `
+        <div class="profile-container">
+          <button class="profile-btn" style="position:absolute;top:18px;right:18px;z-index:10;min-width:44px;min-height:44px;" onclick="window.location.href='/'" aria-label="ლობიში დაბრუნება">←</button>
+          <div class="profile-title">${profile.name}</div>
+          <div class="profile-row"><span class="profile-label">${t('name')}</span> <span class="profile-value">${profile.name}</span></div>
+          <div class="profile-row"><span class="profile-label">${t('email')}</span> <span class="profile-value">${profile.email}</span></div>
+          <div class="profile-level">${t('level')} ${profile.level} <span style="font-size:0.7em;color:#fff;">(XP: ${profile.xp})</span></div>
+          <div class="profile-row"><span class="profile-label">${t('wins')}</span> <span class="profile-value">${profile.wins}</span></div>
+          <div class="profile-row"><span class="profile-label">${t('losses')}</span> <span class="profile-value">${profile.losses}</span></div>
+          <div class="profile-row"><span class="profile-label">${t('gamesPlayed')}</span> <span class="profile-value">${profile.gamesPlayed}</span></div>
+          <button class="profile-btn" style="margin-top:32px;" onclick="window.location.href='/'">${t('back')}</button>
+        </div>
+      `;
+    }
+    async function fetchAndRenderGameHistory() {
+      const root = document.getElementById('profile-root');
+      let gamesDiv = document.getElementById('profile-games');
+      if (!gamesDiv) {
+        gamesDiv = document.createElement('div');
+        gamesDiv.id = 'profile-games';
+        gamesDiv.style.marginTop = '32px';
+        root.appendChild(gamesDiv);
+      }
+      gamesDiv.innerHTML = '<div style="color:#888;">Loading game history...</div>';
+      try {
+        const token = localStorage.getItem('token');
+        const resp = await fetch('/api/games/me', { headers: { Authorization: 'Bearer ' + token } });
+        const games = await resp.json();
+        if (!games.length) {
+          gamesDiv.innerHTML = '<div style="color:#888;">No games played yet.</div>';
+          return;
+        }
+        let html = '<div style="font-weight:bold;margin-bottom:8px;">Game History</div>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:0.98em;">';
+        html += '<tr style="background:#23272f;color:#ffe066;"><th>Date</th><th>Winner</th><th>Losers</th><th>Players</th></tr>';
+        for (const g of games) {
+          const date = new Date(g.timestamp).toLocaleString();
+          const winner = g.winner && g.winner.name ? g.winner.name : g.winner && g.winner.userId ? g.winner.userId : '-';
+          const losers = (g.losers||[]).map(l=>l.name||l.userId).join(', ');
+          const players = (g.players||[]).map(p=>`<span style='display:inline-block;width:14px;height:14px;border-radius:50%;background:${p.color};margin-right:2px;'></span>`).join('');
+          html += `<tr><td>${date}</td><td>${winner}</td><td>${losers}</td><td>${players}</td></tr>`;
+        }
+        html += '</table>';
+        gamesDiv.innerHTML = html;
+      } catch (e) {
+        gamesDiv.innerHTML = '<div style="color:#c00;">Failed to load game history.</div>';
+      }
+    }
+    fetchProfile().then(renderProfile);
+    window.addEventListener('DOMContentLoaded', function() {
+      renderLangDropdown('lang-switch-wrap', window.lang, function(newLang) {
+        setLang(newLang);
+        if (window._lastProfile) renderProfile(window._lastProfile);
+      });
+    });
+    // Call after rendering profile
+    renderProfile = (function(orig) {
+      return function(profile) {
+        orig(profile);
+        fetchAndRenderGameHistory();
+      }
+    })(renderProfile);
+  </script>
+</body>
+</html> 

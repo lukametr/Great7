@@ -140,6 +140,9 @@ export function renderBoard({stonesState, holeState, selectedStoneId, allowedTar
         hole.setAttribute('stroke', '#bdb76b');
         hole.setAttribute('stroke-width', '1.2');
         hole.setAttribute('class', 'board-hole');
+        hole.setAttribute('data-hole-num', num);
+        hole.style.touchAction = 'manipulation';
+        hole.style.pointerEvents = 'all';
         svg.appendChild(hole);
         // --- draw hole number as in codes.html ---
         const numText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -257,6 +260,7 @@ export function renderBoard({stonesState, holeState, selectedStoneId, allowedTar
         s.setAttribute('stroke', '#fff');
         s.setAttribute('stroke-width', '1.5');
         s.setAttribute('data-stone-id', stone.id);
+        s.setAttribute('style', 'touch-action: manipulation; pointer-events: all;');
         if (selectedStoneId === stone.id) {
             s.setAttribute('stroke', '#ff0');
             s.setAttribute('stroke-width', '3');

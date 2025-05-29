@@ -1,0 +1,38 @@
+Level/XP სისტემა (Great7)
+========================
+
+1. Level XP Threshold (საჭირო XP თითოეულ ლეველზე):
+   XP_needed_for_next_level = 10 * level^1.5
+   (მაგალითად: Level 2 = 20 XP, Level 3 = 50 XP, Level 4 = 90 XP, ...)
+
+2. მოგების/წაგების XP:
+   - მოგება: XP += 10 + (Level * 2)
+   - წაგება: თუ Level ≤ 3: XP არ აკლდება
+              Level > 3: XP -= (Level - 2)
+
+3. Level Up/Down:
+   - ყოველი თამაშის შემდეგ ამოწმებ:
+     თუ XP >= საჭირო XP-სთვის, Level +1, XP -= საჭირო XP
+     თუ XP < 0 და Level > 1, Level -1, XP += საჭირო XP (წინა ლეველისთვის)
+
+კოდი:
+------
+function xpForLevel(level) {
+  return Math.floor(10 * Math.pow(level, 1.5));
+}
+// მოგებისას:
+user.xp += 10 + user.level * 2;
+// წაგებისას:
+if (user.level > 3) {
+  user.xp -= (user.level - 2);
+  if (user.xp < 0) user.xp = 0;
+}
+// Level up/down:
+while (user.xp >= xpForLevel(user.level + 1)) {
+  user.xp -= xpForLevel(user.level + 1);
+  user.level += 1;
+}
+while (user.level > 1 && user.xp < 0) {
+  user.level -= 1;
+  user.xp += xpForLevel(user.level + 1);
+} 

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Great 7</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1">
+    <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    @font-face {
+      font-family: 'Stardos Stencil';
+      src: url('assets/fonts/StardosStencil-Bold.ttf') format('truetype');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+    }
+    body { background: #222; color: #fff; font-family: sans-serif; margin: 0; }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #333;
+      padding: 0;
+      border-radius: 0;
+      box-shadow: none;
+      min-height: 100vh;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    h2.great7-western {
+        text-align: center;
+        font-family: 'Stardos Stencil', cursive !important;
+        font-size: 2.7em;
+        letter-spacing: 0.04em;
+        color: #ffe7b3;
+        text-shadow: 0 2px 0 #000, 0 0 12px #a97b3a88;
+        font-weight: bold !important;
+    }
+    .legend { text-align: center; margin-top: 12px; color: #bbb; }
+    .board-wrap {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #23272f;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+    #board {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    #lobby-btn { font-size: 1.2em; padding: 12px 24px; border-radius: 12px; }
+    @media (max-width: 700px) {
+      .container { padding: 0; border-radius: 0; box-shadow: none; min-height: 100vh; height: 100vh; }
+      .board-wrap { width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
+      #board { width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
+      #lobby-btn { font-size: 1.1em; padding: 10px 18px; border-radius: 10px; top: 10px; right: 10px; }
+      .legend { font-size: 1em; padding: 8px 0; }
+    }
+    @media (max-width: 480px) {
+      h2.great7-western { font-size: 2em; }
+      #lobby-btn { font-size: 1em; padding: 8px 10px; border-radius: 8px; }
+      .legend { font-size: 0.95em; }
+    }
+    </style>
+</head>
+<body>
+<button id="lobby-btn" style="position:fixed;top:18px;right:24px;z-index:1000;padding:8px 18px;font-size:1.1em;background:#ffb300;color:#222;border:none;border-radius:8px;box-shadow:0 2px 8px #0004;cursor:pointer;">ლობი</button>
+<div class="container">
+    <h2 class="great7-western" style="font-family: 'Stardos Stencil', cursive !important; font-weight: bold !important;">Great 7</h2>
+    <div class="board-wrap">
+        <svg id="board" viewBox="0 0 700 700"></svg>
+    </div>
+</div>
+<script type="module" src="assets/great7.js"></script>
+</body>
+</html> 
