@@ -69,4 +69,16 @@ export function ensureColorSelected(myColor) {
 export function initLobbyButton() {
   const btn = document.getElementById('lobby-btn');
   if (btn) btn.onclick = showExitPopup;
+}
+
+// ლობი ღილაკის ტექსტის განახლება ენის მიხედვით
+export function setLobbyBtnText() {
+  const btn = document.getElementById('lobby-btn');
+  if (!btn) return;
+  let lang = 'ka';
+  try {
+    const lobby = JSON.parse(localStorage.getItem('great7-lobby'));
+    if (lobby && lobby.lang) lang = lobby.lang;
+  } catch (e) {}
+  btn.textContent = lang === 'en' ? 'Lobby' : 'ლობი';
 } 

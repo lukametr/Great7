@@ -6,6 +6,7 @@ import * as board from './board.js';
 import * as gameLogic from './gameLogic.js';
 import * as network from './network.js';
 import * as ui from './ui.js';
+import { setLobbyBtnText } from './ui.js';
 
 let selectedStoneId = null;
 let allowedTargets = [];
@@ -638,7 +639,9 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     window.addEventListener('resize', adaptLobbyBtnForMobile);
     adaptLobbyBtnForMobile();
-}); 
+
+    setLobbyBtnText();
+});
 
 function tryAutoAssignColor() {
     if (playerCount === 2) {
@@ -801,4 +804,9 @@ function updateMyColorFromPlayers() {
         myColor = null;
         console.log('[COLOR SYNC] myUserId not found in colorPlayers, myColor set to null', myUserId, colorPlayers);
     }
-} 
+}
+
+// ენის შეცვლისას ღილაკის ტექსტი განახლდეს
+window.addEventListener('storage', function(e) {
+  if (e.key === 'great7-lobby') setLobbyBtnText();
+}); 

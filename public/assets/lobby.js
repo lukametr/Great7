@@ -269,11 +269,9 @@ async function renderLobby(keepUser) {
   }
   el.innerHTML = `
     <div class="lobby-header" role="navigation">
-      <button class="main-btn" id="lang-switch-btn" style="margin-right:8px;">${lang==='en'?'EN':'ქარ'}</button>
       <span class="lobby-user">${user.name} (${user.email})</span>
       <button class="main-btn" id="rules-btn" aria-label="თამაშის წესები" tabindex="0">თამაშის წესები</button>
       <button class="main-btn" id="profile-btn" aria-label="პროფილი" tabindex="0">${t('profile')}</button>
-      <button class="main-btn" id="logout-btn" aria-label="გამოსვლა" tabindex="0">${t('logout')}</button>
     </div>
     <div class="lobby-stats" style="margin-bottom:12px;">
       <b>${t('stats')||'სტატისტიკა'}:</b>
@@ -291,8 +289,12 @@ async function renderLobby(keepUser) {
     <div id="modal-bg" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000a;z-index:1000;justify-content:center;align-items:center;">
       <div id="modal-box" style="background:#23272f;padding:24px 20px;border-radius:12px;min-width:260px;max-width:90vw;box-shadow:0 2px 16px #0008;"></div>
     </div>
+    <div class="lobby-logout-wrap" style="margin-top:32px;display:flex;justify-content:center;">
+      <button class="main-btn" id="logout-btn" aria-label="გამოსვლა" tabindex="0" style="min-width:160px;">${t('logout')}</button>
+    </div>
     <span style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">ნავიგაცია: პროფილი და გამოსვლის ღილაკები ხელმისაწვდომია კლავიატურით და ეკრანის მკითხველით</span>
   `;
+  renderLangDropdown('lang-switch-wrap', lang, setLang);
   document.getElementById('rules-btn').onclick = function() {
     let modal = document.getElementById('rules-modal');
     if (!modal) {
@@ -369,23 +371,6 @@ async function renderLobby(keepUser) {
   fetchAndRenderRooms(el, user);
   if (lobbyRoomsInterval) clearInterval(lobbyRoomsInterval);
   lobbyRoomsInterval = setInterval(() => fetchAndRenderRooms(el, user), 2000);
-  if (!document.getElementById('lang-switch-wrap')) {
-    const header = document.querySelector('header');
-    const wrap = document.createElement('div');
-    wrap.id = 'lang-switch-wrap';
-    wrap.style.float = 'right';
-    header.appendChild(wrap);
-  }
-  renderLangDropdown('lang-switch-wrap', lang, setLang);
-  document.getElementById('lang-switch-btn').onclick = function() {
-    const next = lang === 'ka' ? 'en' : 'ka';
-    localStorage.setItem('lang', next);
-    let lobby = {};
-    try { lobby = JSON.parse(localStorage.getItem('great7-lobby')) || {}; } catch(e){}
-    lobby.lang = next;
-    localStorage.setItem('great7-lobby', JSON.stringify(lobby));
-    location.reload();
-  };
 }
 
 function showCreateRoomModal() {

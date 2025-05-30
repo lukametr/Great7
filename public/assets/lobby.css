@@ -40,6 +40,8 @@ header { display: flex; justify-content: space-between; align-items: center; mar
   .main-container { padding: 12px 2vw; max-width: 99vw; }
   .lobby-header { flex-direction: column; align-items: stretch; gap: 10px; }
   .lobby-header .main-btn { width: 100%; margin-left: 0; margin-top: 6px; font-size: 1.15em; padding: 16px 0; }
+  #lang-switch-wrap { right: 12px !important; top: 12px !important; }
+  #rules-btn { right: 140px !important; top: 12px !important; }
 }
 @media (max-width: 400px) {
   .lang-switch { flex-direction: column !important; align-items: flex-end; gap: 8px; }

@@ -5,12 +5,11 @@
   <title>Great7 Lobby</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/assets/lobby.css">
+  <link rel="icon" type="image/png" href="assets/g7_logo.png">
+  <div id="lang-switch-wrap" style="position:fixed;top:18px;right:24px;z-index:1100;"></div>
 </head>
 <body>
   <div class="main-container">
-    <header>
-      <h1 class="logo">Great7</h1>
-    </header>
     <section class="home-section" id="home-section">
       <div style="display:flex;justify-content:center;align-items:center;">
         <img src="https://placehold.co/600x220/23272f/ffe7b3?text=Great7+Board+Game" alt="Board game illustration" style="max-width:100%;border-radius:18px;box-shadow:0 2px 16px #0006;max-height:220px;object-fit:cover;">
@@ -25,5 +24,10 @@
     <section class="lobby-section" id="lobby-section" style="display:none"></section>
   </div>
   <script src="/assets/lobby.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      renderLangDropdown('lang-switch-wrap', localStorage.getItem('lang')||'ka', setLang);
+    });
+  </script>
 </body>
 </html> 
