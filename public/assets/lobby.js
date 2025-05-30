@@ -492,4 +492,46 @@ function showRussianPopup() {
     document.getElementById('russian-popup-close').onclick = function() { popup.style.display = 'none'; };
   }
   popup.style.display = 'flex';
+}
+
+window.addEventListener('resize', adaptLobbyButtonsForMobile);
+adaptLobbyButtonsForMobile();
+function adaptLobbyButtonsForMobile() {
+  const mainBtns = document.querySelectorAll('.main-btn');
+  const rulesBtn = document.getElementById('rules-btn');
+  if (window.innerWidth <= 700) {
+    mainBtns.forEach(btn => {
+      btn.style.fontSize = '1.15em';
+      btn.style.padding = '16px 0';
+      btn.style.width = '100%';
+      btn.style.marginLeft = '0';
+      btn.style.marginTop = '6px';
+      btn.style.borderRadius = '8px';
+    });
+    if (rulesBtn) {
+      rulesBtn.style.fontSize = '1.15em';
+      rulesBtn.style.padding = '16px 0';
+      rulesBtn.style.width = '100%';
+      rulesBtn.style.marginLeft = '0';
+      rulesBtn.style.marginTop = '6px';
+      rulesBtn.style.borderRadius = '8px';
+    }
+  } else {
+    mainBtns.forEach(btn => {
+      btn.style.fontSize = '';
+      btn.style.padding = '';
+      btn.style.width = '';
+      btn.style.marginLeft = '';
+      btn.style.marginTop = '';
+      btn.style.borderRadius = '';
+    });
+    if (rulesBtn) {
+      rulesBtn.style.fontSize = '';
+      rulesBtn.style.padding = '';
+      rulesBtn.style.width = '';
+      rulesBtn.style.marginLeft = '';
+      rulesBtn.style.marginTop = '';
+      rulesBtn.style.borderRadius = '';
+    }
+  }
 } 

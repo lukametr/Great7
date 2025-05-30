@@ -71,6 +71,22 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // დაფის რენდერი
     function render() {
+        // --- დაფის ტრიალი მოთამაშის ფერის მიხედვით ---
+        const colorToAngle = {
+            red: 0,
+            green: playerCount === 2 ? 180 : 60,
+            blue: 120,
+            navy: 180,
+            orange: 240,
+            yellow: 300
+        };
+        const boardRotationAngle = (svg && myColor && colorToAngle[myColor] !== undefined) ? colorToAngle[myColor] : 0;
+        if (svg && myColor && colorToAngle[myColor] !== undefined) {
+            svg.style.transition = 'transform 0.5s cubic-bezier(.4,2,.6,1)';
+            svg.style.transform = `rotate(${boardRotationAngle}deg)`;
+        } else if (svg) {
+            svg.style.transform = '';
+        }
         board.renderBoard({
             stonesState: board.stonesState,
             holeState: board.holeState,
@@ -87,9 +103,11 @@ window.addEventListener('DOMContentLoaded', () => {
             playerCount,
             dragging: false,
             dragStoneId: null,
-            dragCurrentPos: null
+            dragCurrentPos: null,
+            boardRotationAngle
         });
     }
+    window.render = render;
 
     render();
 
@@ -152,8 +170,6 @@ window.addEventListener('DOMContentLoaded', () => {
                 if ((data.type === 'move' || data.type === 'sync') && data.state) {
                     // ქვების მდგომარეობა მთლიანად ჩაანაცვლე სერვერიდან მოსულით
                     board.setStonesState(data.state.stonesState);
-                    Object.keys(board.holeState).forEach(k => { delete board.holeState[k]; });
-                    Object.assign(board.holeState, data.state.holeState);
                     const presentColors = [...new Set(board.stonesState.map(s => s.color))];
                     console.log('SYNC FROM SERVER:', {
                         stonesCount: board.stonesState.length,
@@ -167,6 +183,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     jumpTargets = [];
                     window.MOVE_DONE = false;
                     updateMyColorFromPlayers();
+                    updateFinishTurnBtnVisibility({canShow: false});
                     render();
                     renderPlayerList(currentTurnColor, window.lastTimers);
                     // If after sync, my userId is not in colorPlayers, send join again
@@ -330,9 +347,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 canJumpAgain
             });
         }
-        // After move, prevent further moves until next turn
-        window.MOVE_DONE = true;
-        // Show Finish Turn button ONLY if it's my turn AND I can jump again (multi-jump opportunity)
+        // ღილაკის გამოჩენა მხოლოდ მაშინ, როცა გადახტომის შემდეგაც შესაძლებელია კიდევ გადახტომა
         if (
             myColor &&
             currentTurnColor &&
@@ -341,15 +356,9 @@ window.addEventListener('DOMContentLoaded', () => {
             moveType === 'jump' &&
             canJumpAgain
         ) {
-            finishTurnBtn.disabled = false;
-            finishTurnBtn.style.opacity = '1';
-            finishTurnBtn.style.cursor = 'pointer';
-            finishTurnBtn.style.display = 'block';
+            updateFinishTurnBtnVisibility({canShow: true, disable: false});
         } else {
-            finishTurnBtn.disabled = true;
-            finishTurnBtn.style.opacity = '0.45';
-            finishTurnBtn.style.cursor = 'not-allowed';
-            finishTurnBtn.style.display = 'none';
+            updateFinishTurnBtnVisibility({canShow: false});
         }
         // Deselect after move
         selectedStoneId = null;
@@ -363,6 +372,7 @@ window.addEventListener('DOMContentLoaded', () => {
     function ensureFinishTurnBtn() {
         if (!finishTurnBtn) {
             finishTurnBtn = document.createElement('button');
+            finishTurnBtn.id = 'finish-turn-btn';
             finishTurnBtn.textContent = 'სვლის დასრულება';
             finishTurnBtn.style.position = 'fixed';
             finishTurnBtn.style.left = '50%';
@@ -378,8 +388,32 @@ window.addEventListener('DOMContentLoaded', () => {
             finishTurnBtn.style.cursor = 'pointer';
             finishTurnBtn.style.zIndex = '1002';
             finishTurnBtn.style.display = 'none';
+            finishTurnBtn.style.pointerEvents = 'none';
         }
         document.body.appendChild(finishTurnBtn);
+        // Responsive style for finishTurnBtn
+        function adaptFinishTurnBtnForMobile() {
+            if (!finishTurnBtn) return;
+            if (window.innerWidth <= 700) {
+                finishTurnBtn.style.fontSize = '1em';
+                finishTurnBtn.style.padding = '10px 12vw';
+                finishTurnBtn.style.borderRadius = '8px';
+                finishTurnBtn.style.bottom = '12px';
+                finishTurnBtn.style.width = '90vw';
+                finishTurnBtn.style.left = '50%';
+                finishTurnBtn.style.transform = 'translateX(-50%)';
+            } else {
+                finishTurnBtn.style.fontSize = '1.25em';
+                finishTurnBtn.style.padding = '14px 32px';
+                finishTurnBtn.style.borderRadius = '12px';
+                finishTurnBtn.style.bottom = '18px';
+                finishTurnBtn.style.width = '';
+                finishTurnBtn.style.left = '50%';
+                finishTurnBtn.style.transform = 'translateX(-50%)';
+            }
+        }
+        window.addEventListener('resize', adaptFinishTurnBtnForMobile);
+        adaptFinishTurnBtnForMobile();
     }
     ensureFinishTurnBtn();
 
@@ -549,22 +583,17 @@ window.addEventListener('DOMContentLoaded', () => {
         if (ws && ws.readyState === window.WebSocket.OPEN) {
             network.sendWSMessage({ type: 'finish-turn' });
         }
-        window.MOVE_DONE = false;
-        finishTurnBtn.disabled = true;
-        finishTurnBtn.style.opacity = '0.45';
-        finishTurnBtn.style.cursor = 'not-allowed';
-        finishTurnBtn.style.display = 'none';
+        // ღილაკი იმალება მხოლოდ finish-turn-ზე დაჭერისას
+        updateFinishTurnBtnVisibility({canShow: false});
     });
 
-    // On new turn, reset MOVE_DONE
+    // On new turn, reset MOVE_DONE მხოლოდ სერვერიდან მიღებულ whose-turn-ზე
     function onNewTurn() {
         window.MOVE_DONE = false;
-        // On new turn, hide Finish Turn button for everyone
-        finishTurnBtn.disabled = true;
-        finishTurnBtn.style.opacity = '0.45';
-        finishTurnBtn.style.cursor = 'not-allowed';
-        finishTurnBtn.style.display = 'none';
+        updateFinishTurnBtnVisibility({canShow: false});
         visitedJumpPositions.clear(); // Always clear on new turn
+        // Debug log
+        console.log('[TURN] onNewTurn: myColor=', myColor, 'currentTurnColor=', currentTurnColor);
     }
 
     // Listen for whose-turn
@@ -796,17 +825,33 @@ function updateMyColorFromPlayers() {
         for (const [name, hex] of Object.entries(board.STONE_COLORS)) {
             if (hex === colorPlayers[myUserId]) {
                 myColor = name;
-                console.log('[COLOR SYNC] myUserId:', myUserId, 'color:', myColor, 'colorPlayers:', colorPlayers);
+                console.log('[COLOR SYNC] myUserId:', myUserId, 'color:', myColor, 'colorPlayers:', colorPlayers, 'currentTurnColor:', currentTurnColor);
+                window.render();
+                updateFinishTurnBtnVisibility({canShow: false});
                 return;
             }
         }
     } else {
         myColor = null;
-        console.log('[COLOR SYNC] myUserId not found in colorPlayers, myColor set to null', myUserId, colorPlayers);
+        console.log('[COLOR SYNC] myUserId not found in colorPlayers, myColor set to null', myUserId, colorPlayers, 'currentTurnColor:', currentTurnColor);
+        window.render();
+        updateFinishTurnBtnVisibility({canShow: false});
     }
 }
 
 // ენის შეცვლისას ღილაკის ტექსტი განახლდეს
 window.addEventListener('storage', function(e) {
   if (e.key === 'great7-lobby') setLobbyBtnText();
-}); 
+});
+
+// Finish Turn ღილაკის გამოჩენა/დამალვა
+function updateFinishTurnBtnVisibility({canShow = false, disable = false} = {}) {
+    if (!finishTurnBtn) return;
+    if (canShow) {
+        finishTurnBtn.disabled = !!disable;
+        finishTurnBtn.style.display = 'block';
+    } else {
+        finishTurnBtn.disabled = true;
+        finishTurnBtn.style.display = 'none';
+    }
+} 

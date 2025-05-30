@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 const rooms = require('./rooms.cjs');
 const wsRooms = {};
-const { getDb } = require('./api.cjs');
+const { getDb, setWsRooms } = require('./api.cjs');
 
 app.use('/api', api);
 app.use(express.static(path.join(__dirname, '../../public')));
@@ -105,6 +105,13 @@ wss.on('connection', (ws, req) => {
   wsRooms[roomId].clients.add(ws);
   // Identify user
   ws._userId = userId;
+  // Add to players if not already present
+  if (!wsRooms[roomId].players[userId]) {
+    const assignedColor = colorOrder[Object.keys(wsRooms[roomId].players).length];
+    wsRooms[roomId].players[userId] = assignedColor;
+    if (wsRooms[roomId].names && !wsRooms[roomId].names[userId]) wsRooms[roomId].names[userId] = userId;
+    console.log('[AUTO PLAYER ADD] userId:', userId, 'assignedColor:', assignedColor, 'players:', wsRooms[roomId].players);
+  }
   // Send user-id to client so it knows its userId
   ws.send(JSON.stringify({ type: 'user-id', userId }));
   // Do NOT send color-update here. Wait for join message.
@@ -141,19 +148,19 @@ wss.on('connection', (ws, req) => {
     if (data.type === 'join' && typeof data.name === 'string') {
       console.log('[NAME SYNC] Player joined:', { userId: ws._userId, name: data.name });
       wsRooms[roomId].names[ws._userId] = data.name;
-      // Assign color if not already assigned
-      if (!wsRooms[roomId].players[ws._userId]) {
-        const assignedColor = colorOrder[Object.keys(wsRooms[roomId].players).length];
-        wsRooms[roomId].players[ws._userId] = assignedColor;
-        console.log('SERVER COLOR ASSIGN (on join):', { userId: ws._userId, assignedColor, players: wsRooms[roomId].players });
-      }
-      console.log('[NAME SYNC] Current names mapping:', JSON.stringify(wsRooms[roomId].names));
       // Notify all clients about current color assignments and names
-      wsRooms[roomId].clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names }));
-        }
-      });
+      if (Object.keys(wsRooms[roomId].players).length > 0) {
+        wsRooms[roomId].clients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN && client._userId && wsRooms[roomId].players[client._userId]) {
+            client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names || {} }));
+          } else if (client._userId && !wsRooms[roomId].players[client._userId]) {
+            // If client is no longer in players, close their socket
+            try { client.close(); } catch {}
+          }
+        });
+      } else {
+        console.warn('[BUG] Tried to send color-update with empty players:', wsRooms[roomId].players);
+      }
       // --- NEW: If all players have joined, start the game (send whose-turn etc) ---
       const roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
       let requiredPlayers = 2;
@@ -194,12 +201,11 @@ wss.on('connection', (ws, req) => {
         return;
       }
       // --- ახალი წესი: მხოლოდ ერთი ქვით შეიძლება სვლა ---
-      if (wsRooms[roomId].turnMoveUserId && wsRooms[roomId].turnMoveUserId !== userId) {
+      if (wsRooms[roomId].turnMoveUserId === null || typeof wsRooms[roomId].turnMoveUserId === 'undefined') {
+        wsRooms[roomId].turnMoveUserId = userId;
+      } else if (wsRooms[roomId].turnMoveUserId !== userId) {
         ws.send(JSON.stringify({ type: 'move-error', message: 'You already moved this turn.' }));
         return;
-      }
-      if (!wsRooms[roomId].turnMoveUserId) {
-        wsRooms[roomId].turnMoveUserId = userId;
       }
       // --- ახალი ლოგიკა: გადახტომის შემთხვევაში თუ კიდევ არის შესაძლებელი გადახტომა იგივე ქვით, სვლა არ სრულდება სანამ finish-turn არ მოვა ---
       // data.moveType: 'jump' ან 'normal' უნდა იყოს ფრონტენდიდან
@@ -244,22 +250,39 @@ wss.on('connection', (ws, req) => {
           try {
             const db = await getDb();
             const users = db.collection('users');
-            function xpForLevel(level) {
-              return Math.floor(10 * Math.pow(level, 1.5));
+            function xpForLevel(level) { return Math.floor(10 * Math.pow(level, 1.5)); }
+            async function findUserByIdOrNameOrEmail(userId, name, email) {
+              let user = null;
+              if (require('mongodb').ObjectId.isValid(userId)) {
+                user = await users.findOne({ _id: new require('mongodb').ObjectId(userId) });
+                if (user) return user;
+              }
+              if (email) {
+                user = await users.findOne({ email });
+                if (user) return user;
+              }
+              if (name) {
+                const found = await users.find({ name }).toArray();
+                if (found.length === 1) return found[0];
+                if (found.length > 1) {
+                  console.error('[STATS] Ambiguous user name, multiple users found for name:', name, found.map(u=>u._id), 'unicode:', Array.from(name).map(c=>c.charCodeAt(0).toString(16)).join(' '));
+                  return null;
+                }
+                if (found.length === 0) {
+                  console.error('[STATS] User not found by name:', name, ' (unicode:', Array.from(name).map(c=>c.charCodeAt(0).toString(16)).join(' '), ')');
+                  return null;
+                }
+              }
+              return null;
             }
             // Winner
-            const winnerUserIdStr = winnerUserId.split('-')[0];
-            console.log('[STATS] Looking for winner user:', winnerUserIdStr);
             let winnerUser = null;
-            if (require('mongodb').ObjectId.isValid(winnerUserIdStr)) {
-              winnerUser = await users.findOne({ _id: new require('mongodb').ObjectId(winnerUserIdStr) });
+            if (winnerUserId) {
+              const winnerUserIdStr = winnerUserId.split('-')[0];
+              const winnerName = wsRooms[roomId]?.names && wsRooms[roomId].names[winnerUserId];
+              winnerUser = await findUserByIdOrNameOrEmail(winnerUserIdStr, winnerName, null);
+              if (!winnerUser) console.error('[STATS] Winner user NOT FOUND:', { winnerUserIdStr, winnerName });
             }
-            if (!winnerUser && wsRooms[roomId].names && wsRooms[roomId].names[winnerUserId]) {
-              // Try by name as fallback
-              winnerUser = await users.findOne({ name: wsRooms[roomId].names[winnerUserId] });
-              if (winnerUser) console.log('[STATS] Winner found by name:', winnerUser.name);
-            }
-            console.log('[STATS] Winner user found:', winnerUser);
             if (winnerUser) {
               let newXp = (winnerUser.xp || 0) + 10 + (winnerUser.level || 1) * 2;
               let newLevel = winnerUser.level || 1;
@@ -280,16 +303,9 @@ wss.on('connection', (ws, req) => {
             for (const [userId, color] of Object.entries(wsRooms[roomId].players)) {
               if (userId === winnerUserId) continue;
               const loserUserIdStr = userId.split('-')[0];
-              console.log('[STATS] Looking for loser user:', loserUserIdStr);
-              let loserUser = null;
-              if (require('mongodb').ObjectId.isValid(loserUserIdStr)) {
-                loserUser = await users.findOne({ _id: new require('mongodb').ObjectId(loserUserIdStr) });
-              }
-              if (!loserUser && wsRooms[roomId].names && wsRooms[roomId].names[userId]) {
-                loserUser = await users.findOne({ name: wsRooms[roomId].names[userId] });
-                if (loserUser) console.log('[STATS] Loser found by name:', loserUser.name);
-              }
-              console.log('[STATS] Loser user found:', loserUser);
+              const loserName = wsRooms[roomId]?.names && wsRooms[roomId].names[userId];
+              let loserUser = await findUserByIdOrNameOrEmail(loserUserIdStr, loserName, null);
+              if (!loserUser) console.error('[STATS] Loser user NOT FOUND:', { loserUserIdStr, loserName });
               if (loserUser) {
                 losers.push({ userId: loserUser._id, name: loserUser.name });
                 let newXp = loserUser.xp || 0;
@@ -311,31 +327,61 @@ wss.on('connection', (ws, req) => {
                 console.log('[STATS] Loser user NOT FOUND, stats not updated');
               }
             }
-            // --- Save game history ---
+            // Forfeit loser
+            const loserUserIdStr = loserUserId.split('-')[0];
+            const forfeitName = wsRooms[roomId]?.names && wsRooms[roomId].names[loserUserId];
+            let forfeitUser = await findUserByIdOrNameOrEmail(loserUserIdStr, forfeitName, null);
+            if (!forfeitUser) console.error('[STATS] Forfeit loser user NOT FOUND:', { loserUserIdStr, forfeitName });
+            if (forfeitUser) {
+              losers.push({ userId: forfeitUser._id, name: forfeitUser.name });
+              let newXp = forfeitUser.xp || 0;
+              let newLevel = forfeitUser.level || 1;
+              if (newLevel > 3) {
+                newXp -= (newLevel - 2);
+                if (newXp < 0) newXp = 0;
+              }
+              while (newLevel > 1 && newXp < 0) {
+                newLevel -= 1;
+                newXp += xpForLevel(newLevel + 1);
+              }
+              const updateRes = await users.updateOne(
+                { _id: forfeitUser._id },
+                { $inc: { losses: 1, gamesPlayed: 1 }, $set: { xp: newXp, level: newLevel } }
+              );
+              console.log('[STATS] Forfeit loser update result:', updateRes);
+            } else {
+              console.log('[STATS] Forfeit loser user NOT FOUND, stats not updated');
+            }
+            // Save game history
             const games = db.collection('games');
             await games.insertOne({
               roomId,
-              winner: { userId: winnerUserIdStr, name: winnerUser ? winnerUser.name : '' },
+              winner: winnerUserId && winnerUser ? { userId: winnerUser._id.toString(), name: winnerUser.name } : null,
               losers,
-              players: Object.entries(wsRooms[roomId].players).map(([userId, color]) => ({ userId, color })),
+              players: Object.entries(wsRooms[roomId]?.players || {}).map(([userId, color]) => ({ userId, color })),
               timestamp: new Date(),
-              finalState: wsRooms[roomId].state
+              finalState: wsRooms[roomId]?.state
             });
-            // --- Optionally: send profile update to winner/loser if their socket is open ---
-            wsRooms[roomId].clients.forEach(client => {
-              if (client.readyState === 1 && client._userId) {
-                // You can trigger a profile refresh on the frontend if needed
-                client.send(JSON.stringify({ type: 'profile-update' }));
-              }
-            });
+            if (wsRooms[roomId] && wsRooms[roomId].clients) {
+              wsRooms[roomId].clients.forEach(client => {
+                if (client.readyState === 1 && client._userId) {
+                  client.send(JSON.stringify({ type: 'profile-update' }));
+                }
+              });
+            }
           } catch (e) { console.error('Failed to update stats or save game in MongoDB:', e); }
         })();
         // --- Notify clients ---
-        wsRooms[roomId].clients.forEach(client => {
-          if (client.readyState === 1) {
-            client.send(JSON.stringify({ type: 'game-over', winner: wsRooms[roomId].winner }));
-          }
-        });
+        if (winnerUserId && typeof winnerUser !== 'undefined' && winnerUser) {
+          wsRooms[roomId].clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'game-over', winner: wsRooms[roomId].winner }));
+            }
+          });
+        } else if (winnerUserId && (typeof winnerUser === 'undefined' || !winnerUser)) {
+          console.error('[BUG] Winner userId არსებობს, მაგრამ ვერ მოიძებნა ბაზაში, თამაში არ დასრულდა:', winnerUserId);
+          return;
+        }
         return;
       }
       // --- END WIN CHECK ---
@@ -368,13 +414,19 @@ wss.on('connection', (ws, req) => {
       const nextColor = wsRooms[roomId].activeColors[wsRooms[roomId].turnIndex % wsRooms[roomId].activeColors.length];
       const nextUserId = Object.entries(wsRooms[roomId].players).find(([uid, color]) => color === nextColor)?.[0];
       if (nextUserId) startTurnTimer(roomId, nextUserId);
+      // თუ თამაშის დასრულების შემდეგ finish-turn მოვიდა, ყველა ტაიმერი შეწყდეს
+      if (wsRooms[roomId].gameOver) clearAllTimers(roomId);
       return;
     } else if (data.type === 'sync-request') {
       if (wsRooms[roomId].state) ws.send(JSON.stringify({ type: 'sync', state: wsRooms[roomId].state }));
     } else if (data.type === 'leave') {
       // Player explicitly left the game (clicked lobby/exit)
       if (wsRooms[roomId].players && wsRooms[roomId].players[ws._userId]) {
+        console.log('[PLAYER REMOVE] Reason: leave, userId:', ws._userId);
         delete wsRooms[roomId].players[ws._userId];
+        if (wsRooms[roomId].names) delete wsRooms[roomId].names[ws._userId];
+        if (wsRooms[roomId].timers) delete wsRooms[roomId].timers[ws._userId];
+        if (wsRooms[roomId].disconnectedUsers) delete wsRooms[roomId].disconnectedUsers[ws._userId];
         // განაახლე activeColors
         const colorOrder = [
           '#e74c3c', // red
@@ -388,12 +440,29 @@ wss.on('connection', (ws, req) => {
         let requiredPlayers = 2;
         if (roomMeta && roomMeta.players) requiredPlayers = parseInt(roomMeta.players, 10);
         wsRooms[roomId].activeColors = colorOrder.filter(c => Object.values(wsRooms[roomId].players).includes(c)).slice(0, requiredPlayers);
-        // Notify others
-        wsRooms[roomId].clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names || {} }));
-          }
-        });
+        // Notify others ONLY if players is not empty
+        if (Object.keys(wsRooms[roomId].players).length > 0) {
+          wsRooms[roomId].clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN && client._userId && wsRooms[roomId].players[client._userId]) {
+              client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names || {} }));
+            } else if (client._userId && !wsRooms[roomId].players[client._userId]) {
+              try { client.close(); } catch {}
+            }
+          });
+        }
+        // თუ დარჩა მხოლოდ ერთი მოთამაშე, თამაში დასრულდეს და ტაიმერები შეწყდეს
+        if (Object.keys(wsRooms[roomId].players).length === 1) {
+          wsRooms[roomId].gameOver = true;
+          clearAllTimers(roomId);
+          console.log('[GAME OVER] Only one player left, game ended:', Object.keys(wsRooms[roomId].players));
+        } else if (Object.keys(wsRooms[roomId].players).length === 0) {
+          clearAllTimers(roomId);
+          delete wsRooms[roomId];
+          const idx = rooms.findIndex(r => r.id.toString() === roomId.toString());
+          if (idx !== -1) rooms.splice(idx, 1);
+          if (typeof onRoomDeleted === 'function') onRoomDeleted(roomId);
+          console.log('[ROOM DELETED] No players left, room deleted:', roomId);
+        }
       }
       return;
     }
@@ -401,17 +470,35 @@ wss.on('connection', (ws, req) => {
   });
 
   // Notify ALL clients about current color assignments and names
-  wsRooms[roomId].clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names || {} }));
-    }
-  });
+  if (Object.keys(wsRooms[roomId].players).length > 0) {
+    wsRooms[roomId].clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN && client._userId && wsRooms[roomId].players[client._userId]) {
+        client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names || {} }));
+      } else if (client._userId && !wsRooms[roomId].players[client._userId]) {
+        try { client.close(); } catch {}
+      }
+    });
+  } else {
+    console.warn('[BUG] Tried to send color-update with empty players:', wsRooms[roomId].players);
+  }
+
+  // --- Grace period: disconnectedUsers ---
+  if (!wsRooms[roomId].disconnectedUsers) wsRooms[roomId].disconnectedUsers = {};
+  // თუ დაბრუნდა გათიშული user, წაშალე disconnectTime
+  if (userId && wsRooms[roomId].disconnectedUsers[userId]) {
+    delete wsRooms[roomId].disconnectedUsers[userId];
+  }
 
   ws.on('close', () => {
     wsRooms[roomId].clients.delete(ws);
+    // Grace period: მოთამაშე არ იშლება players-დან, არამედ აღინიშნება როგორც გათიშული
+    if (ws._userId) {
+      wsRooms[roomId].disconnectedUsers[ws._userId] = Date.now();
+    }
     // Do NOT remove player on disconnect; only remove on timer-forfeit or leave
     if (!wsRooms[roomId].clients || wsRooms[roomId].clients.size === 0) {
       console.log('ROOM DELETED', roomId);
+      clearAllTimers(roomId); // ოთახის წაშლისასაც შეწყდეს ყველა ტაიმერი
       delete wsRooms[roomId];
       const idx = rooms.findIndex(r => r.id.toString() === roomId.toString());
       if (idx !== -1) rooms.splice(idx, 1);
@@ -422,6 +509,13 @@ wss.on('connection', (ws, req) => {
 
 server.listen(PORT, () => {
   console.log('Server running on http://localhost:' + PORT);
+});
+
+process.on('uncaughtException', function (err) {
+  console.error('UNCAUGHT EXCEPTION:', err);
+});
+process.on('unhandledRejection', function (reason, promise) {
+  console.error('UNHANDLED REJECTION:', reason);
 });
 
 module.exports = { wsRooms, setOnRoomDeleted, rooms };
@@ -459,63 +553,75 @@ function clearAllMainTimersExcept(roomId, exceptUserId) {
   }
 }
 function startTurnTimer(roomId, userId) {
-  if (wsRooms[roomId].gameOver) return;
+  if (!wsRooms[roomId] || wsRooms[roomId].gameOver) return;
   if (!wsRooms[roomId].timers) wsRooms[roomId].timers = {};
   const timers = wsRooms[roomId].timers;
-  // Clear all other timers (including main timers)
   clearAllMainTimersExcept(roomId, userId);
-  // ყოველთვის დააყენე ახალი მნიშვნელობები
-  timers[userId] = { mainTimeLeft: 60000, inMainTime: false };
+  if (!timers[userId]) timers[userId] = { mainTimeLeft: 60000, inMainTime: false };
+  else timers[userId].inMainTime = false;
   timers[userId].turnStart = Date.now();
   timers[userId].inMainTime = false;
-  timers[userId].turnTimeLeft = 30000; // 30 seconds per turn
+  timers[userId].turnTimeLeft = 30000;
+  console.log(`[TIMER] Start turn timer for userId=${userId}, mainTimeLeft=${timers[userId].mainTimeLeft}, turnTimeLeft=30000, at=${new Date().toISOString()}`);
   if (timers[userId].timeoutId) clearTimeout(timers[userId].timeoutId);
   if (timers[userId].turnIntervalId) clearInterval(timers[userId].turnIntervalId);
-  // --- Send timer-update every second during turn time ---
   timers[userId].turnIntervalId = setInterval(() => {
-    if (wsRooms[roomId].gameOver) { clearInterval(timers[userId].turnIntervalId); timers[userId].turnIntervalId = null; return; }
-    if (timers[userId].turnTimeLeft > 0) {
+    if (!wsRooms[roomId] || wsRooms[roomId].gameOver) { if (timers[userId]) { clearInterval(timers[userId].turnIntervalId); timers[userId].turnIntervalId = null; } return; }
+    if (timers[userId] && timers[userId].turnTimeLeft > 0) {
       timers[userId].turnTimeLeft -= 1000;
       if (timers[userId].turnTimeLeft < 0) timers[userId].turnTimeLeft = 0;
       sendTimerUpdate(roomId);
-    } else {
+    } else if (timers[userId]) {
       clearInterval(timers[userId].turnIntervalId);
       timers[userId].turnIntervalId = null;
     }
   }, 1000);
   timers[userId].timeoutId = setTimeout(() => {
-    if (wsRooms[roomId].gameOver) return;
-    clearInterval(timers[userId].turnIntervalId);
-    timers[userId].turnIntervalId = null;
-    timers[userId].inMainTime = true;
-    timers[userId].turnTimeLeft = 0;
-    sendTimerUpdate(roomId);
-    startMainTimer(roomId, userId);
-  }, 30000); // 30 seconds
+    if (!wsRooms[roomId] || wsRooms[roomId].gameOver) return;
+    if (timers[userId]) {
+      clearInterval(timers[userId].turnIntervalId);
+      timers[userId].turnIntervalId = null;
+      timers[userId].inMainTime = true;
+      timers[userId].turnTimeLeft = 0;
+      sendTimerUpdate(roomId);
+      console.log(`[TIMER] Turn timer expired for userId=${userId}, switching to main timer at ${new Date().toISOString()}`);
+      startMainTimer(roomId, userId);
+    }
+  }, 30000);
   sendTimerUpdate(roomId);
 }
 function startMainTimer(roomId, userId) {
-  if (wsRooms[roomId].gameOver) return;
+  if (!wsRooms[roomId] || wsRooms[roomId].gameOver) return;
   const timers = wsRooms[roomId].timers;
   const t = timers[userId];
-  // Clear all other main timers
+  if (!t) return;
   clearAllMainTimersExcept(roomId, userId);
   if (t.turnIntervalId) { clearInterval(t.turnIntervalId); t.turnIntervalId = null; }
   function tick() {
-    if (wsRooms[roomId].gameOver) return;
+    if (!wsRooms[roomId] || wsRooms[roomId].gameOver) return;
     const now = Date.now();
     const elapsed = now - (t._lastTick || now);
     t._lastTick = now;
     t.mainTimeLeft -= elapsed;
+    console.log(`[TIMER] Main timer tick for userId=${userId}, mainTimeLeft=${t.mainTimeLeft}, elapsed=${elapsed}, at=${new Date().toISOString()}`);
+    // --- Grace period check ---
+    const disconnectTime = wsRooms[roomId].disconnectedUsers && wsRooms[roomId].disconnectedUsers[userId];
+    if (disconnectTime) {
+      const totalLeft = (t.mainTimeLeft || 0) + (t.turnTimeLeft || 0);
+      const waited = now - disconnectTime;
+      console.log(`[TIMER] User disconnected: userId=${userId}, waited=${waited}, totalLeft=${totalLeft}`);
+      if (waited < totalLeft) {
+        t.timeoutId = setTimeout(tick, 1000);
+        return;
+      }
+    }
+    t.mainTimeLeft = Math.max(0, t.mainTimeLeft);
     if (t.mainTimeLeft <= 0) {
       t.mainTimeLeft = 0;
       sendTimerUpdate(roomId);
-      wsRooms[roomId].clients.forEach(client => {
-        if (client.readyState === 1) client.send(JSON.stringify({ type: 'timer-forfeit', userId }));
-      });
+      console.log(`[TIMER] Main timer expired for userId=${userId} at ${new Date().toISOString()}`);
       // --- End game and update stats ---
-      // Find winner: the next player in turn order who still has time left
-      const activeColors = wsRooms[roomId].activeColors;
+      const activeColors = wsRooms[roomId]?.activeColors || [];
       const loserUserId = userId;
       let winnerUserId = null;
       for (let i = 1; i <= activeColors.length; ++i) {
@@ -527,81 +633,106 @@ function startMainTimer(roomId, userId) {
           break;
         }
       }
-      // --- Remove player who lost on time ---
-      if (wsRooms[roomId].players && wsRooms[roomId].players[loserUserId]) {
-        delete wsRooms[roomId].players[loserUserId];
-        // განაახლე activeColors
+      if (wsRooms[roomId] && wsRooms[roomId].players && wsRooms[roomId].players[loserUserId]) {
+        console.log('[PLAYER REMOVE] Reason: timer-forfeit, userId:', loserUserId);
+        removePlayerEverywhere(roomId, loserUserId);
         const colorOrder = [
-          '#e74c3c', // red
-          '#2ecc40', // green
-          '#3498db', // blue
-          '#3a3a7a', // navy
-          '#ff9800', // orange
-          '#f1c40f'  // yellow
+          '#e74c3c', '#2ecc40', '#3498db', '#3a3a7a', '#ff9800', '#f1c40f'
         ];
         const roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
         let requiredPlayers = 2;
         if (roomMeta && roomMeta.players) requiredPlayers = parseInt(roomMeta.players, 10);
         wsRooms[roomId].activeColors = colorOrder.filter(c => Object.values(wsRooms[roomId].players).includes(c)).slice(0, requiredPlayers);
-        // Notify others
-        wsRooms[roomId].clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names || {} }));
+        // Notify others ONLY if players is not empty
+        if (Object.keys(wsRooms[roomId].players).length > 0) {
+          if (wsRooms[roomId].clients) {
+            wsRooms[roomId].clients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN && client._userId && wsRooms[roomId].players[client._userId]) {
+                client.send(JSON.stringify({ type: 'color-update', players: wsRooms[roomId].players, names: wsRooms[roomId].names || {} }));
+              } else if (client._userId && !wsRooms[roomId].players[client._userId]) {
+                try { client.close(); } catch {}
+              }
+            });
           }
-        });
+        }
+        // თუ დარჩა მხოლოდ ერთი მოთამაშე, თამაში დასრულდეს და ტაიმერები შეწყდეს
+        if (Object.keys(wsRooms[roomId].players).length === 1) {
+          wsRooms[roomId].gameOver = true;
+          clearAllTimers(roomId);
+          console.log('[GAME OVER] Only one player left, game ended:', Object.keys(wsRooms[roomId].players));
+        } else if (Object.keys(wsRooms[roomId].players).length === 0) {
+          clearAllTimers(roomId);
+          delete wsRooms[roomId];
+          const idx = rooms.findIndex(r => r.id.toString() === roomId.toString());
+          if (idx !== -1) rooms.splice(idx, 1);
+          if (typeof onRoomDeleted === 'function') onRoomDeleted(roomId);
+          console.log('[ROOM DELETED] No players left, room deleted:', roomId);
+        }
+      } else {
+        // მოთამაშე მოულოდნელად გაქრა players-დან, არ გამოაცხადო გამარჯვებული, ჩაწერე ლოგი
+        console.error('[BUG] Tried to remove player (timer-forfeit), but userId არ არის players-ში:', loserUserId, wsRooms[roomId]?.players);
+        return; // არ გამოაცხადო გამარჯვებული
       }
-      // --- Update stats and save game (always) ---
       (async () => {
         try {
           const db = await getDb();
           const users = db.collection('users');
-          function xpForLevel(level) {
-            return Math.floor(10 * Math.pow(level, 1.5));
+          function xpForLevel(level) { return Math.floor(10 * Math.pow(level, 1.5)); }
+          async function findUserByIdOrNameOrEmail(userId, name, email) {
+            let user = null;
+            if (require('mongodb').ObjectId.isValid(userId)) {
+              user = await users.findOne({ _id: new require('mongodb').ObjectId(userId) });
+              if (user) return user;
+            }
+            if (email) {
+              user = await users.findOne({ email });
+              if (user) return user;
+            }
+            if (name) {
+              const found = await users.find({ name }).toArray();
+              if (found.length === 1) return found[0];
+              if (found.length > 1) {
+                console.error('[STATS] Ambiguous user name, multiple users found for name:', name, found.map(u=>u._id), 'unicode:', Array.from(name).map(c=>c.charCodeAt(0).toString(16)).join(' '));
+                return null;
+              }
+              if (found.length === 0) {
+                console.error('[STATS] User not found by name:', name, ' (unicode:', Array.from(name).map(c=>c.charCodeAt(0).toString(16)).join(' '), ')');
+                return null;
+              }
+            }
+            return null;
           }
           // Winner
+          let winnerUser = null;
           if (winnerUserId) {
             const winnerUserIdStr = winnerUserId.split('-')[0];
-            console.log('[STATS] (timer) Looking for winner user:', winnerUserIdStr);
-            let winnerUser = null;
-            if (require('mongodb').ObjectId.isValid(winnerUserIdStr)) {
-              winnerUser = await users.findOne({ _id: new require('mongodb').ObjectId(winnerUserIdStr) });
-            }
-            if (!winnerUser && wsRooms[roomId].names && wsRooms[roomId].names[winnerUserId]) {
-              winnerUser = await users.findOne({ name: wsRooms[roomId].names[winnerUserId] });
-              if (winnerUser) console.log('[STATS] (timer) Winner found by name:', winnerUser.name);
-            }
-            console.log('[STATS] (timer) Winner user found:', winnerUser);
-            if (winnerUser) {
-              let newXp = (winnerUser.xp || 0) + 10 + (winnerUser.level || 1) * 2;
-              let newLevel = winnerUser.level || 1;
-              while (newXp >= xpForLevel(newLevel + 1)) {
-                newXp -= xpForLevel(newLevel + 1);
-                newLevel += 1;
-              }
-              const updateRes = await users.updateOne(
-                { _id: winnerUser._id },
-                { $inc: { wins: 1, gamesPlayed: 1 }, $set: { xp: newXp, level: newLevel } }
-              );
-              console.log('[STATS] (timer) Winner update result:', updateRes);
-            } else {
-              console.log('[STATS] (timer) Winner user NOT FOUND, stats not updated');
-            }
+            const winnerName = wsRooms[roomId]?.names && wsRooms[roomId].names[winnerUserId];
+            winnerUser = await findUserByIdOrNameOrEmail(winnerUserIdStr, winnerName, null);
+            if (!winnerUser) console.error('[STATS] Winner user NOT FOUND:', { winnerUserIdStr, winnerName });
           }
-          // Losers (including the one who lost on time)
+          if (winnerUser) {
+            let newXp = (winnerUser.xp || 0) + 10 + (winnerUser.level || 1) * 2;
+            let newLevel = winnerUser.level || 1;
+            while (newXp >= xpForLevel(newLevel + 1)) {
+              newXp -= xpForLevel(newLevel + 1);
+              newLevel += 1;
+            }
+            const updateRes = await users.updateOne(
+              { _id: winnerUser._id },
+              { $inc: { wins: 1, gamesPlayed: 1 }, $set: { xp: newXp, level: newLevel } }
+            );
+            console.log('[STATS] Winner update result:', updateRes);
+          } else {
+            console.log('[STATS] Winner user NOT FOUND, stats not updated');
+          }
+          // Losers
           const losers = [];
-          for (const [userId, color] of Object.entries(wsRooms[roomId].players)) {
+          for (const [userId, color] of Object.entries(wsRooms[roomId]?.players || {})) {
             if (userId === winnerUserId) continue;
             const loserUserIdStr = userId.split('-')[0];
-            console.log('[STATS] (timer) Looking for loser user:', loserUserIdStr);
-            let loserUser = null;
-            if (require('mongodb').ObjectId.isValid(loserUserIdStr)) {
-              loserUser = await users.findOne({ _id: new require('mongodb').ObjectId(loserUserIdStr) });
-            }
-            if (!loserUser && wsRooms[roomId].names && wsRooms[roomId].names[userId]) {
-              loserUser = await users.findOne({ name: wsRooms[roomId].names[userId] });
-              if (loserUser) console.log('[STATS] (timer) Loser found by name:', loserUser.name);
-            }
-            console.log('[STATS] (timer) Loser user found:', loserUser);
+            const loserName = wsRooms[roomId]?.names && wsRooms[roomId].names[userId];
+            let loserUser = await findUserByIdOrNameOrEmail(loserUserIdStr, loserName, null);
+            if (!loserUser) console.error('[STATS] Loser user NOT FOUND:', { loserUserIdStr, loserName });
             if (loserUser) {
               losers.push({ userId: loserUser._id, name: loserUser.name });
               let newXp = loserUser.xp || 0;
@@ -618,27 +749,20 @@ function startMainTimer(roomId, userId) {
                 { _id: loserUser._id },
                 { $inc: { losses: 1, gamesPlayed: 1 }, $set: { xp: newXp, level: newLevel } }
               );
-              console.log('[STATS] (timer) Loser update result:', updateRes);
+              console.log('[STATS] Loser update result:', updateRes);
             } else {
-              console.log('[STATS] (timer) Loser user NOT FOUND, stats not updated');
+              console.log('[STATS] Loser user NOT FOUND, stats not updated');
             }
           }
-          // Also update the loser who just lost on time
+          // Forfeit loser
           const loserUserIdStr = loserUserId.split('-')[0];
-          console.log('[STATS] (timer) Looking for forfeit loser user:', loserUserIdStr);
-          let loserUser = null;
-          if (require('mongodb').ObjectId.isValid(loserUserIdStr)) {
-            loserUser = await users.findOne({ _id: new require('mongodb').ObjectId(loserUserIdStr) });
-          }
-          if (!loserUser && wsRooms[roomId].names && wsRooms[roomId].names[loserUserId]) {
-            loserUser = await users.findOne({ name: wsRooms[roomId].names[loserUserId] });
-            if (loserUser) console.log('[STATS] (timer) Forfeit loser found by name:', loserUser.name);
-          }
-          console.log('[STATS] (timer) Forfeit loser user found:', loserUser);
-          if (loserUser) {
-            losers.push({ userId: loserUser._id, name: loserUser.name });
-            let newXp = loserUser.xp || 0;
-            let newLevel = loserUser.level || 1;
+          const forfeitName = wsRooms[roomId]?.names && wsRooms[roomId].names[loserUserId];
+          let forfeitUser = await findUserByIdOrNameOrEmail(loserUserIdStr, forfeitName, null);
+          if (!forfeitUser) console.error('[STATS] Forfeit loser user NOT FOUND:', { loserUserIdStr, forfeitName });
+          if (forfeitUser) {
+            losers.push({ userId: forfeitUser._id, name: forfeitUser.name });
+            let newXp = forfeitUser.xp || 0;
+            let newLevel = forfeitUser.level || 1;
             if (newLevel > 3) {
               newXp -= (newLevel - 2);
               if (newXp < 0) newXp = 0;
@@ -648,38 +772,44 @@ function startMainTimer(roomId, userId) {
               newXp += xpForLevel(newLevel + 1);
             }
             const updateRes = await users.updateOne(
-              { _id: loserUser._id },
+              { _id: forfeitUser._id },
               { $inc: { losses: 1, gamesPlayed: 1 }, $set: { xp: newXp, level: newLevel } }
             );
-            console.log('[STATS] (timer) Forfeit loser update result:', updateRes);
+            console.log('[STATS] Forfeit loser update result:', updateRes);
           } else {
-            console.log('[STATS] (timer) Forfeit loser user NOT FOUND, stats not updated');
+            console.log('[STATS] Forfeit loser user NOT FOUND, stats not updated');
           }
-          // --- Save game history ---
+          // Save game history
           const games = db.collection('games');
           await games.insertOne({
             roomId,
-            winner: winnerUserId ? { userId: winnerUserId.split('-')[0], name: winnerUser ? winnerUser.name : '' } : null,
+            winner: winnerUserId && winnerUser ? { userId: winnerUser._id.toString(), name: winnerUser.name } : null,
             losers,
-            players: Object.entries(wsRooms[roomId].players).map(([userId, color]) => ({ userId, color })),
+            players: Object.entries(wsRooms[roomId]?.players || {}).map(([userId, color]) => ({ userId, color })),
             timestamp: new Date(),
-            finalState: wsRooms[roomId].state
+            finalState: wsRooms[roomId]?.state
           });
-          // --- Optionally: send profile update to winner/loser if their socket is open ---
-          wsRooms[roomId].clients.forEach(client => {
-            if (client.readyState === 1 && client._userId) {
-              // You can trigger a profile refresh on the frontend if needed
-              client.send(JSON.stringify({ type: 'profile-update' }));
-            }
-          });
+          if (wsRooms[roomId] && wsRooms[roomId].clients) {
+            wsRooms[roomId].clients.forEach(client => {
+              if (client.readyState === 1 && client._userId) {
+                client.send(JSON.stringify({ type: 'profile-update' }));
+              }
+            });
+          }
         } catch (e) { console.error('Failed to update stats or save game in MongoDB:', e); }
       })();
-      // --- Notify clients ---
-      wsRooms[roomId].clients.forEach(client => {
-        if (client.readyState === 1) {
-          client.send(JSON.stringify({ type: 'game-over', winner: winnerUserId ? { color: wsRooms[roomId].players[winnerUserId], userId: winnerUserId } : null }));
+      if (winnerUserId && typeof winnerUser !== 'undefined' && winnerUser) {
+        if (wsRooms[roomId] && wsRooms[roomId].clients) {
+          wsRooms[roomId].clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'game-over', winner: { color: wsRooms[roomId].players[winnerUserId], userId: winnerUserId } }));
+            }
+          });
         }
-      });
+      } else if (winnerUserId && (typeof winnerUser === 'undefined' || !winnerUser)) {
+        console.error('[BUG] timer-forfeit: Winner userId არსებობს, მაგრამ ვერ მოიძებნა ბაზაში, თამაში არ დასრულდა:', winnerUserId);
+        return;
+      }
       return;
     }
     t.timeoutId = setTimeout(tick, 1000);
@@ -687,4 +817,11 @@ function startMainTimer(roomId, userId) {
   }
   t._lastTick = Date.now();
   t.timeoutId = setTimeout(tick, 1000);
+}
+function removePlayerEverywhere(roomId, userId) {
+  if (!wsRooms[roomId]) return;
+  if (wsRooms[roomId].players) delete wsRooms[roomId].players[userId];
+  if (wsRooms[roomId].names) delete wsRooms[roomId].names[userId];
+  if (wsRooms[roomId].timers) delete wsRooms[roomId].timers[userId];
+  if (wsRooms[roomId].disconnectedUsers) delete wsRooms[roomId].disconnectedUsers[userId];
 } 

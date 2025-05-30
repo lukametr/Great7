@@ -158,7 +158,7 @@ export function resetStonesState(playerCount = 6) {
 
 import diagonals from '../assets/diagonals115.js';
 
-export function renderBoard({stonesState, holeState, selectedStoneId, allowedTargets, jumpTargets, myColor, currentTurnColor, hiddenColors, HOLE_RADIUS, STONE_COLORS, BOARD_CENTER, holeCoords, playerCount}) {
+export function renderBoard({stonesState, holeState, selectedStoneId, allowedTargets, jumpTargets, myColor, currentTurnColor, hiddenColors, HOLE_RADIUS, STONE_COLORS, BOARD_CENTER, holeCoords, playerCount, boardRotationAngle = 0}) {
     if (!svg) return;
     // წაშალე ძველი ქვები და ბუდეების ჰაილაითი
     Array.from(svg.querySelectorAll('[data-stone-id], .stone-highlight, .hole-allowed, .hole-diagonal, .hole-jump, .board-hole')).forEach(e => e.remove());
@@ -184,8 +184,12 @@ export function renderBoard({stonesState, holeState, selectedStoneId, allowedTar
         numText.setAttribute('font-size', isMobile ? '14.4' : '9.6');
         numText.setAttribute('fill', '#000');
         numText.setAttribute('font-weight', 'bold');
-        numText.textContent = num;
+        numText.textContent = num; // ნომერი ყოველთვის თავის უჯრაზეა
         numText.setAttribute('pointer-events', 'none');
+        // --- counter-rotate ---
+        if (boardRotationAngle) {
+            numText.setAttribute('transform', `rotate(${-boardRotationAngle} ${x} ${y+5})`);
+        }
         svg.appendChild(numText);
     });
     // --- highlight all allowed trajectories from diagonals115.json in yellow if stone is selected ---

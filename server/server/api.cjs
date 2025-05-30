@@ -3,14 +3,15 @@ const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
 const SECRET = process.env.JWT_SECRET || 'great7secret';
 const router = express.Router();
-const wsRooms = require('./index.cjs').wsRooms;
 const rooms = require('./rooms.cjs');
 const { MongoClient, ObjectId } = require('mongodb');
 const MONGO_URL = process.env.MONGO_URL || 'mongodb+srv://lukametr:akukelaAIO12@great7.plyjgbl.mongodb.net/?retryWrites=true&w=majority&appName=great7';
 const MONGO_DB = process.env.MONGO_DB || 'great7';
 const { config } = require('dotenv');
 config();
-let mongoClient, mongoDb;
+let mongoClient = null;
+let dbInstance = null;
+let wsRooms = {};
 
 console.log('MONGO_URL:', MONGO_URL);
 console.log('MONGO_DB:', MONGO_DB);
@@ -18,17 +19,30 @@ console.log('MONGO_DB:', MONGO_DB);
 router.use(bodyParser.json());
 
 async function getDb() {
-  try {
-    if (!mongoClient) {
+  if (dbInstance) return dbInstance;
+  if (!mongoClient) {
+    try {
       mongoClient = new MongoClient(MONGO_URL);
       await mongoClient.connect();
-      mongoDb = mongoClient.db(MONGO_DB);
+      dbInstance = mongoClient.db(MONGO_DB);
+      return dbInstance;
+    } catch (e) {
+      console.error('getDb ERROR: Error: MongoDB connection failed', e);
+      mongoClient = null;
+      dbInstance = null;
+      // არ აგდებს პროცესს, უბრალოდ აბრუნებს null-ს
+      return null;
     }
-    if (!mongoDb) throw new Error('MongoDB connection failed');
-    return mongoDb;
-  } catch (err) {
-    console.error('getDb ERROR:', err);
-    throw err;
+  } else {
+    try {
+      dbInstance = mongoClient.db(MONGO_DB);
+      return dbInstance;
+    } catch (e) {
+      console.error('getDb ERROR: Error: MongoDB connection failed', e);
+      mongoClient = null;
+      dbInstance = null;
+      return null;
+    }
   }
 }
 
@@ -127,7 +141,6 @@ router.get('/rooms', auth, async (req, res) => {
     ]
   }).toArray();
   // Attach joined count to each room
-  const wsRooms = require('./index.cjs').wsRooms;
   const roomsWithCounts = activeRooms.map(r => ({
     ...r,
     id: r._id,
@@ -206,6 +219,9 @@ router.get('/games/:userId', auth, async (req, res) => {
   const results = await games.find(query).sort({ timestamp: -1 }).limit(20).toArray();
   res.json(results);
 });
+
+function setWsRooms(obj) { wsRooms = obj; }
+module.exports.setWsRooms = setWsRooms;
 
 module.exports = router;
 module.exports.getDb = getDb; 

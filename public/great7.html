@@ -161,15 +161,6 @@ document.getElementById('rules-btn').onclick = function() {
     modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
   }
 };
-document.addEventListener('DOMContentLoaded', function() {
-  renderLangDropdown('lang-switch-wrap', getUILang(), function(newLang) {
-    let lobby = {};
-    try { lobby = JSON.parse(localStorage.getItem('great7-lobby')) || {}; } catch(e){}
-    lobby.lang = newLang;
-    localStorage.setItem('great7-lobby', JSON.stringify(lobby));
-    location.reload();
-  });
-});
 </script>
 </body>
 </html> 
