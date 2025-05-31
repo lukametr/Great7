@@ -97,6 +97,8 @@ wss.on('connection', async (ws, req) => {
     };
     const hiddenColors = colorHideMap[playerCount] || [];
     const filteredStones = stones.filter(stone => !hiddenColors.includes(stone.color));
+    // --- ახალი: ქვების უნიკალური ფერების სია ---
+    const filteredColors = [...new Set(filteredStones.map(s => s.color))];
     // Build initial holeState
     const holeState = {};
     for (let i = 1; i <= 115; ++i) holeState[i] = null;
@@ -109,20 +111,22 @@ wss.on('connection', async (ws, req) => {
       clients: new Set(),
       players: {},
       turnIndex: 0,
-      activeColors: []
+      activeColors: filteredColors // აქაც გამოიყენე უნიკალური ფერები
     };
     // --- ოთახი დაამატე rooms მასივში, თუ ჯერ არ არსებობს ---
     if (!rooms.find(r => r.id.toString() === roomId.toString())) {
       rooms.push({ id: roomId, name: `Room ${roomId}`, players: playerCount });
     }
-    console.log('ROOM CREATED', roomId, 'players:', playerCount, 'stones:', filteredStones.length);
+    console.log('ROOM CREATED', roomId, 'players:', playerCount, 'stones:', filteredStones.length, 'colors:', filteredColors);
   }
   wsRooms[roomId].clients.add(ws);
   // Identify user
   ws._userId = userId;
   // Add to players if not already present
   if (!wsRooms[roomId].players[userId]) {
-    const assignedColor = colorOrder[Object.keys(wsRooms[roomId].players).length];
+    // --- გამოიყენე მხოლოდ უნიკალური ფერები ---
+    const filteredColors = wsRooms[roomId].activeColors || [];
+    const assignedColor = filteredColors[Object.keys(wsRooms[roomId].players).length];
     wsRooms[roomId].players[userId] = assignedColor;
     if (wsRooms[roomId].names && !wsRooms[roomId].names[userId]) wsRooms[roomId].names[userId] = userId;
     console.log('[AUTO PLAYER ADD] userId:', userId, 'assignedColor:', assignedColor, 'players:', wsRooms[roomId].players);
@@ -131,13 +135,12 @@ wss.on('connection', async (ws, req) => {
   ws.send(JSON.stringify({ type: 'user-id', userId }));
   // Do NOT send color-update here. Wait for join message.
 
-  // თუ ყველა მოთამაშე შემოვიდა, გაუგზავნე ყველას whose-turn (პირველი სვლა წითელია)
+  // თუ ყველა მოთამაშე შემოვიდა, გაუგზავნე ყველას whose-turn (პირველი სვლა უნიკალური ფერებიდან)
   const roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
   let requiredPlayers = 2;
   if (roomMeta && roomMeta.players) requiredPlayers = parseInt(roomMeta.players, 10);
   if (Object.keys(wsRooms[roomId].players).length === requiredPlayers) {
-    // Use the same colorOrder for activeColors
-    wsRooms[roomId].activeColors = colorOrder.slice(0, requiredPlayers);
+    wsRooms[roomId].activeColors = (wsRooms[roomId].activeColors || []).slice(0, requiredPlayers);
     wsRooms[roomId].turnIndex = 0;
     wsRooms[roomId].clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
@@ -181,7 +184,7 @@ wss.on('connection', async (ws, req) => {
       let requiredPlayers = 2;
       if (roomMeta && roomMeta.players) requiredPlayers = parseInt(roomMeta.players, 10);
       if (Object.keys(wsRooms[roomId].players).length === requiredPlayers) {
-        wsRooms[roomId].activeColors = colorOrder.slice(0, requiredPlayers);
+        wsRooms[roomId].activeColors = (wsRooms[roomId].activeColors || []).slice(0, requiredPlayers);
         wsRooms[roomId].turnIndex = 0;
         wsRooms[roomId].clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
