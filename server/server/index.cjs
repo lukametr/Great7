@@ -30,7 +30,7 @@ function getUserId(req) {
 
 // --- Grace period map for disconnects ---
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const roomId = url.searchParams.get('room');
   let userId = url.searchParams.get('userId');
@@ -51,7 +51,22 @@ wss.on('connection', (ws, req) => {
   // If no clients are left in the room, always re-initialize the room state
   if (!wsRooms[roomId] || !wsRooms[roomId].clients || wsRooms[roomId].clients.size === 0) {
     let playerCount = 2;
-    const roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
+    let roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
+    // --- Fetch from MongoDB if not found in memory ---
+    if (!roomMeta) {
+      try {
+        const db = await require('./api.cjs').getDb();
+        if (db) {
+          const roomsCol = db.collection('rooms');
+          const dbRoom = await roomsCol.findOne({ _id: isNaN(Number(roomId)) ? roomId : Number(roomId) });
+          if (dbRoom && dbRoom.players) {
+            playerCount = parseInt(dbRoom.players, 10);
+            roomMeta = { id: roomId, name: dbRoom.name || `Room ${roomId}`, players: playerCount };
+            rooms.push(roomMeta);
+          }
+        }
+      } catch (e) { console.warn('Could not fetch room meta from DB:', e); }
+    }
     if (roomMeta && roomMeta.players) playerCount = parseInt(roomMeta.players, 10);
     console.log('ROOM INIT:', { roomId, playerCount, roomMeta, rooms });
     // Color constants
