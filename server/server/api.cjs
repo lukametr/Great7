@@ -47,6 +47,7 @@ async function getDb() {
 }
 
 function auth(req, res, next) {
+  if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') return next();
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).end();
   try {
@@ -145,7 +146,7 @@ router.get('/rooms', auth, async (req, res) => {
     ...r,
     id: r._id,
     players: Number(r.players) || 2,
-    joined: wsRooms[r._id] && wsRooms[r._id].clients ? wsRooms[r._id].clients.size : 0
+    joined: wsRooms[r._id] && wsRooms[r._id].players ? Object.keys(wsRooms[r._id].players).length : 0
   }));
   res.json(roomsWithCounts);
 });
@@ -157,6 +158,10 @@ router.post('/rooms', auth, async (req, res) => {
   const now = Date.now();
   const roomsCol = db.collection('rooms');
   const result = await roomsCol.insertOne({ name, players: Number(players) || 2, color: color || 'red', lastActivity: now, finished: false });
+  // --- Add to in-memory rooms array ---
+  if (!rooms.find(r => r.id && r.id.toString() === result.insertedId.toString())) {
+    rooms.push({ id: result.insertedId, name, players: Number(players) || 2 });
+  }
   res.status(201).json({ id: result.insertedId, name, players: Number(players) || 2, color: color || 'red' });
 });
 

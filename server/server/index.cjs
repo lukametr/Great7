@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 8000;
 const rooms = require('./rooms.cjs');
 const wsRooms = {};
 const { getDb, setWsRooms } = require('./api.cjs');
+const boardSetup = require('./boardSetup.js');
 
 app.use('/api', api);
 app.use(express.static(path.join(__dirname, '../../public')));
@@ -38,17 +39,8 @@ wss.on('connection', async (ws, req) => {
   if (!userId) {
     userId = (req.headers['sec-websocket-key'] || '') + '-' + Math.random().toString(36).slice(2);
   }
-  // --- colorOrder must be defined before use ---
-  const colorOrder = [
-    '#e74c3c', // red
-    '#2ecc40', // green
-    '#3498db', // blue
-    '#3a3a7a', // navy
-    '#ff9800', // orange
-    '#f1c40f'  // yellow
-  ];
 
-  // If no clients are left in the room, always re-initialize the room state
+  // --- ოთახის ინიციალიზაცია ---
   if (!wsRooms[roomId] || !wsRooms[roomId].clients || wsRooms[roomId].clients.size === 0) {
     let playerCount = 2;
     let roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
@@ -69,69 +61,37 @@ wss.on('connection', async (ws, req) => {
     }
     if (roomMeta && roomMeta.players) playerCount = parseInt(roomMeta.players, 10);
     console.log('ROOM INIT:', { roomId, playerCount, roomMeta, rooms });
-    // Color constants
-    const STONE_COLORS = {
-      green:   '#2ecc40',
-      orange:  '#ff9800',
-      navy:    '#3a3a7a',
-      blue:    '#3498db',
-      yellow:  '#f1c40f',
-      red:     '#e74c3c',
-    };
-    // All stones
-    const stones = [
-      ...[3,5,6,9,14,15,16].map((pos,i)=>({id:`g${i+1}`, color:STONE_COLORS.green, pos})),
-      ...[11,12,24,35,45,33,44].map((pos,i)=>({id:`o${i+1}`, color:STONE_COLORS.orange, pos})),
-      ...[18,19,29,41,52,43,53].map((pos,i)=>({id:`n${i+1}`, color:STONE_COLORS.navy, pos})),
-      ...[63,64,73,75,87,97,98].map((pos,i)=>({id:`b${i+1}`, color:STONE_COLORS.blue, pos})),
-      ...[71,72,81,83,92,104,105].map((pos,i)=>({id:`y${i+1}`, color:STONE_COLORS.yellow, pos})),
-      ...[100,101,102,107,110,111,113].map((pos,i)=>({id:`r${i+1}`, color:STONE_COLORS.red, pos})),
-    ];
-    // Colors to hide by player count (same as frontend)
-    const colorHideMap = {
-      6: [],
-      5: [STONE_COLORS.yellow],
-      4: [STONE_COLORS.yellow, STONE_COLORS.orange],
-      3: [STONE_COLORS.yellow, STONE_COLORS.orange, STONE_COLORS.blue],
-      2: [STONE_COLORS.yellow, STONE_COLORS.orange, STONE_COLORS.blue, STONE_COLORS.navy],
-    };
-    const hiddenColors = colorHideMap[playerCount] || [];
-    const filteredStones = stones.filter(stone => !hiddenColors.includes(stone.color));
-    // --- ახალი: ქვების უნიკალური ფერების სია ---
-    const filteredColors = [...new Set(filteredStones.map(s => s.color))];
-    // Build initial holeState
-    const holeState = {};
-    for (let i = 1; i <= 115; ++i) holeState[i] = null;
-    filteredStones.forEach(stone => { holeState[stone.pos] = stone.id; });
+    // --- გამოიყენე ახალი მოდული ქვებისა და ფერების გენერაციისთვის ---
+    const activeColors = boardSetup.getActiveColors(playerCount);
+    const boardState = boardSetup.getInitialBoardState(playerCount);
     wsRooms[roomId] = {
-      state: {
-        stonesState: filteredStones,
-        holeState: holeState
-      },
+      state: boardState,
       clients: new Set(),
       players: {},
       turnIndex: 0,
-      activeColors: filteredColors // აქაც გამოიყენე უნიკალური ფერები
+      activeColors: activeColors
     };
-    // --- ოთახი დაამატე rooms მასივში, თუ ჯერ არ არსებობს ---
     if (!rooms.find(r => r.id.toString() === roomId.toString())) {
       rooms.push({ id: roomId, name: `Room ${roomId}`, players: playerCount });
     }
-    console.log('ROOM CREATED', roomId, 'players:', playerCount, 'stones:', filteredStones.length, 'colors:', filteredColors);
+    console.log('ROOM CREATED', roomId, 'players:', playerCount, 'stones:', boardState.stonesState.length, 'colors:', activeColors, 'stonesState:', boardState.stonesState);
   }
   wsRooms[roomId].clients.add(ws);
-  // Identify user
   ws._userId = userId;
-  // Add to players if not already present
+  // --- ფერის მინიჭება ---
   if (!wsRooms[roomId].players[userId]) {
-    // --- გამოიყენე მხოლოდ უნიკალური ფერები ---
     const filteredColors = wsRooms[roomId].activeColors || [];
-    const assignedColor = filteredColors[Object.keys(wsRooms[roomId].players).length];
+    // პირველი მოთამაშე ყოველთვის იღებს წითელ ფერს
+    let assignedColor;
+    if (Object.keys(wsRooms[roomId].players).length === 0) {
+      assignedColor = '#e74c3c'; // წითელი
+    } else {
+      assignedColor = filteredColors[Object.keys(wsRooms[roomId].players).length];
+    }
     wsRooms[roomId].players[userId] = assignedColor;
     if (wsRooms[roomId].names && !wsRooms[roomId].names[userId]) wsRooms[roomId].names[userId] = userId;
     console.log('[AUTO PLAYER ADD] userId:', userId, 'assignedColor:', assignedColor, 'players:', wsRooms[roomId].players);
   }
-  // Send user-id to client so it knows its userId
   ws.send(JSON.stringify({ type: 'user-id', userId }));
   // Do NOT send color-update here. Wait for join message.
 
@@ -153,7 +113,10 @@ wss.on('connection', async (ws, req) => {
     if (firstUserId) startTurnTimer(roomId, firstUserId);
   }
 
-  if (wsRooms[roomId].state) ws.send(JSON.stringify({ type: 'sync', state: wsRooms[roomId].state }));
+  if (wsRooms[roomId].state) {
+    console.log('SYNC SEND', roomId, 'playerCount:', playerCount, 'stonesState:', wsRooms[roomId].state.stonesState);
+    ws.send(JSON.stringify({ type: 'sync', state: wsRooms[roomId].state }));
+  }
 
   // --- Add player name support ---
   // Store userId->name mapping in wsRooms[roomId].names
@@ -209,7 +172,7 @@ wss.on('connection', async (ws, req) => {
         return;
       }
       // --- სვლის რიგის შემოწმება ---
-      const activeColors = wsRooms[roomId].activeColors && wsRooms[roomId].activeColors.length ? wsRooms[roomId].activeColors : colorOrder.slice(0, requiredPlayers);
+      const activeColors = wsRooms[roomId].activeColors && wsRooms[roomId].activeColors.length ? wsRooms[roomId].activeColors : boardSetup.getActiveColors(requiredPlayers);
       const turnColor = activeColors[wsRooms[roomId].turnIndex % activeColors.length];
       // მოძებნე ამ ws-ის assignedColor
       const userId = ws._userId;
@@ -446,18 +409,8 @@ wss.on('connection', async (ws, req) => {
         if (wsRooms[roomId].timers) delete wsRooms[roomId].timers[ws._userId];
         if (wsRooms[roomId].disconnectedUsers) delete wsRooms[roomId].disconnectedUsers[ws._userId];
         // განაახლე activeColors
-        const colorOrder = [
-          '#e74c3c', // red
-          '#2ecc40', // green
-          '#3498db', // blue
-          '#3a3a7a', // navy
-          '#ff9800', // orange
-          '#f1c40f'  // yellow
-        ];
-        const roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
-        let requiredPlayers = 2;
-        if (roomMeta && roomMeta.players) requiredPlayers = parseInt(roomMeta.players, 10);
-        wsRooms[roomId].activeColors = colorOrder.filter(c => Object.values(wsRooms[roomId].players).includes(c)).slice(0, requiredPlayers);
+        const activeColors = boardSetup.getActiveColors(requiredPlayers);
+        wsRooms[roomId].activeColors = activeColors;
         // Notify others ONLY if players is not empty
         if (Object.keys(wsRooms[roomId].players).length > 0) {
           wsRooms[roomId].clients.forEach(client => {
@@ -654,13 +607,8 @@ function startMainTimer(roomId, userId) {
       if (wsRooms[roomId] && wsRooms[roomId].players && wsRooms[roomId].players[loserUserId]) {
         console.log('[PLAYER REMOVE] Reason: timer-forfeit, userId:', loserUserId);
         removePlayerEverywhere(roomId, loserUserId);
-        const colorOrder = [
-          '#e74c3c', '#2ecc40', '#3498db', '#3a3a7a', '#ff9800', '#f1c40f'
-        ];
-        const roomMeta = rooms.find(r => r.id.toString() === roomId.toString());
-        let requiredPlayers = 2;
-        if (roomMeta && roomMeta.players) requiredPlayers = parseInt(roomMeta.players, 10);
-        wsRooms[roomId].activeColors = colorOrder.filter(c => Object.values(wsRooms[roomId].players).includes(c)).slice(0, requiredPlayers);
+        const activeColors = boardSetup.getActiveColors(requiredPlayers);
+        wsRooms[roomId].activeColors = activeColors;
         // Notify others ONLY if players is not empty
         if (Object.keys(wsRooms[roomId].players).length > 0) {
           if (wsRooms[roomId].clients) {

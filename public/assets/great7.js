@@ -125,6 +125,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 if (data.type === 'color-update') {
                     console.log('[NAME SYNC] Received color-update:', data);
                     colorPlayers = data.players || {};
+                    window.colorPlayers = colorPlayers;
                     if (data.names && Object.keys(data.names).length > 0) {
                         colorNames = data.names;
                     } else if (!data.names) {
@@ -244,6 +245,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
             }
         );
+        window.ws = ws;
     }
 
     // ქვებზე click-to-move ლოგიკა
